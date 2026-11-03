@@ -24,7 +24,10 @@ let R = {}; // DOM-Referenzen der aktuellen Seite
 let tickTimer = null;
 
 const rank = (r) => ROLES.indexOf(r);
-const can = (role) => !!S.user && !S.publicToken && rank(S.user.role) >= rank(role);
+// Im Rundown gilt die Rolle für diesen Rundown (Freigaben), sonst die globale Rolle
+const roleNow = () => (S.rd && S.myRole ? S.myRole : S.user?.role);
+const can = (role) => !!S.user && !S.publicToken && rank(roleNow()) >= rank(role);
+const canCreate = () => !!S.user && !S.user.restricted && rank(S.user.role) >= rank('editor');
 const canEdit = () => can('editor') && !S.readMode;
 const canOperate = () => can('operator');
 
@@ -101,7 +104,7 @@ function teardown() {
   disconnect();
   clearInterval(tickTimer); tickTimer = null;
   closePop();
-  S.rd = null; R = {}; S.presence = null; focusSent = 'null';
+  S.rd = null; S.myRole = null; R = {}; S.presence = null; focusSent = 'null';
   $$('.modal-back').forEach((m) => m.remove());
 }
 
@@ -132,7 +135,7 @@ function userMenu(anchor) {
     h('div', { class: 'um-head' },
       h('div', { class: `avatar role-${u.role}` }, initials(u)),
       h('div', { class: 'um-who' }, h('b', null, u.name || u.email.split('@')[0]), h('span', null, u.email)),
-      h('span', { class: `role-badge role-${u.role}` }, ROLE_LABEL[u.role])),
+      u.restricted ? h('span', { class: 'st-badge bk-ext' }, icon('lock'), 'Extern') : h('span', { class: `role-badge role-${u.role}` }, ROLE_LABEL[u.role])),
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi', onclick: () => { closePop(); changePassword(); } }, icon('key'), 'Passwort ändern'),
     can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/users'); } }, icon('users'), 'Benutzer verwalten') : null,
@@ -162,7 +165,7 @@ function topbar(active) {
     themeToggle(),
     h('button', { class: 'user-btn', title: 'Konto', onclick: (e) => userMenu(e.currentTarget) },
       h('span', { class: `avatar sm role-${S.user.role}` }, initials(S.user)),
-      h('span', { class: 'user-btn-txt' }, h('b', null, S.user.name || S.user.email.split('@')[0]), h('span', null, ROLE_LABEL[S.user.role])),
+      h('span', { class: 'user-btn-txt' }, h('b', null, S.user.name || S.user.email.split('@')[0]), h('span', null, S.user.restricted ? 'Extern' : ROLE_LABEL[S.user.role])),
       icon('chevronDown')));
 }
 
@@ -344,7 +347,7 @@ async function viewRundowns() {
   shell('rundowns', h('div', { class: 'page ov-page' },
     h('div', { class: 'page-head' },
       h('div', null, h('div', { class: 'label' }, 'Übersicht'), h('h1', null, 'Rundowns'), sub),
-      can('editor') ? h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown') : null),
+      canCreate() ? h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown') : null),
     h('div', { class: 'ov-tools' },
       h('div', { class: 'search' }, icon('search'), search),
       chips,
@@ -354,8 +357,9 @@ async function viewRundowns() {
   const actionsMenu = (anchor, r) => menu(anchor, [
     { label: 'Öffnen', icon: 'edit', onClick: () => go('#/rundown/' + r.id) },
     { label: 'Live-Ansicht', icon: 'external', onClick: () => window.open('/live/' + r.id, '_blank') },
-    ...(can('editor') ? [
-      { label: 'Duplizieren', icon: 'copy', onClick: async () => { const d = await api('POST', `/api/rundowns/${r.id}/duplicate`); toast('Rundown dupliziert', 'ok'); go('#/rundown/' + d.id); } },
+    ...(canCreate() ? [{ label: 'Duplizieren', icon: 'copy', onClick: async () => { const d = await api('POST', `/api/rundowns/${r.id}/duplicate`); toast('Rundown dupliziert', 'ok'); go('#/rundown/' + d.id); } }] : []),
+    ...(can('admin') ? [{ label: 'Freigaben …', icon: 'lock', onClick: () => accessModal(r) }] : []),
+    ...(rank(r.my_role) >= rank('editor') ? [
       { label: 'Löschen', icon: 'trash', onClick: async () => { if (await confirmDialog(`„${r.title}“ wird mit allen Programmpunkten gelöscht.`, { title: 'Rundown löschen?' })) { await api('DELETE', '/api/rundowns/' + r.id); toast('Gelöscht', 'ok'); load(); } } },
     ] : []),
   ]);
@@ -423,8 +427,8 @@ async function viewRundowns() {
     let shown = rds.filter((r) => (P.filter === 'all' || rdStatus(r) === P.filter) && (!query || r.title.toLowerCase().includes(query)));
     if (!rds.length) {
       content.replaceChildren(h('div', { class: 'ov-empty' }, icon('list'), h('b', null, 'Noch keine Rundowns'),
-        h('span', null, can('editor') ? 'Lege deinen ersten Rundown an – Programmpunkte, Blöcke und Spalten kannst du danach frei gestalten.' : 'Sobald ein Editor einen Rundown anlegt, erscheint er hier.'),
-        can('editor') ? h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown') : null));
+        h('span', null, canCreate() ? 'Lege deinen ersten Rundown an – Programmpunkte, Blöcke und Spalten kannst du danach frei gestalten.' : S.user.restricted ? 'Dir wurde noch kein Rundown freigegeben. Ein Admin kann dir Zugriff geben.' : 'Sobald ein Editor einen Rundown anlegt, erscheint er hier.'),
+        canCreate() ? h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown') : null));
       return;
     }
     if (!shown.length) { content.replaceChildren(h('div', { class: 'ov-empty' }, icon('search'), h('b', null, 'Keine Treffer'), h('span', null, 'Ändere Suche oder Filter.'))); return; }
@@ -460,7 +464,7 @@ async function viewRundowns() {
 
   const load = async () => { rds = await api('GET', '/api/rundowns'); fetchedAt = Date.now(); draw(); };
   await load();
-  connect({ view: 'overview' }, { rundowns: debounce(load, 200), reconnect: load });
+  connect({ view: 'overview' }, { rundowns: debounce(load, 200), reconnect: load, access: async () => { const st = await api('GET', '/api/auth/status').catch(() => null); if (st?.user) S.user = st.user; router(); } });
 }
 
 function newRundown() {
@@ -564,7 +568,8 @@ async function viewUsers() {
       h('div', { class: 'perm-scroll' }, h('table', { class: 'perm-table' },
         h('thead', null, h('tr', null, h('th', null, ''), ROLES.slice().reverse().map((r) => h('th', null, h('span', { class: `role-badge role-${r}` }, ROLE_LABEL[r]))))),
         h('tbody', null, PERMS.map(([label, roles]) => h('tr', null, h('td', null, label),
-          ROLES.slice().reverse().map((r) => h('td', null, roles.includes(r) ? h('span', { class: 'perm-yes' }, icon('check')) : h('span', { class: 'perm-no' }, '–')))))))))));
+          ROLES.slice().reverse().map((r) => h('td', null, roles.includes(r) ? h('span', { class: 'perm-yes' }, icon('check')) : h('span', { class: 'perm-no' }, '–')))))))),
+      h('p', { class: 'hint', style: { margin: '12px 4px 6px' } }, h('b', null, 'Externe Benutzer'), ' (z. B. Dienstleister) sehen nur Rundowns, die ihnen freigegeben werden – die Rolle wird pro Rundown vergeben (Schloss-Symbol bzw. „Freigaben“ im Rundown).'))));
 
   const draw = () => {
     const counts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.role === r).length]));
@@ -588,10 +593,13 @@ async function viewUsers() {
           } catch (ex) { toast(ex.message, 'err'); e.target.value = u.role; }
         },
       }, ROLES.slice().reverse().map((r) => h('option', { value: r, selected: r === u.role }, ROLE_LABEL[r])));
+      if (u.restricted) { sel.disabled = true; sel.title = 'Externe Benutzer haben Rollen pro Rundown – siehe Schloss-Symbol'; sel.replaceChildren(h('option', null, 'pro Rundown')); sel.className = 'role-select role-viewer'; }
       return h('div', { class: 'user-row' },
         h('div', { class: `avatar role-${u.role}` + (u.online ? ' is-online' : '') }, initials(u)),
         h('div', { class: 'u-info' },
           h('div', { class: 'u-name' }, u.name || u.email.split('@')[0], me ? h('span', { class: 'tag' }, 'Du') : null,
+            u.restricted ? h('span', { class: 'st-badge bk-ext', title: 'Sieht nur freigegebene Rundowns' }, icon('lock'), `Extern · ${u.share_count} ${u.share_count === 1 ? 'Rundown' : 'Rundowns'}`) : null,
+            !u.restricted && u.share_count ? h('span', { class: 'st-badge', title: 'Zusätzliche Rechte in einzelnen Rundowns' }, icon('lock'), `+${u.share_count} Freigabe${u.share_count === 1 ? '' : 'n'}`) : null,
             u.pending ? h('span', { class: 'st-badge st-upcoming', title: u.open_link ? 'Einladungslink gültig bis ' + new Date(u.open_link.expires_at).toLocaleString('de-DE') : 'Einladungslink abgelaufen – neuen erzeugen' }, icon('send'), u.open_link ? 'Einladung offen' : 'Einladung abgelaufen') : null,
             !u.pending && u.must_change ? h('span', { class: 'st-badge st-today', title: 'Muss beim nächsten Login ein neues Passwort festlegen' }, icon('key'), 'Temp. Passwort') : null,
             !u.pending && u.open_link ? h('span', { class: 'st-badge st-public', title: 'Reset-Link gültig bis ' + new Date(u.open_link.expires_at).toLocaleString('de-DE') }, icon('link'), 'Reset-Link aktiv') : null),
@@ -602,6 +610,7 @@ async function viewUsers() {
           : h('div', { class: 'u-last', title: u.last_login ? new Date(u.last_login.replace(' ', 'T') + 'Z').toLocaleString('de-DE') : '' }, h('span', { class: 'lbl' }, 'Letzter Login'), relTime(u.last_login)),
         h('div', { class: 'u-actions' },
           h('button', { class: 'icon-btn', title: 'Bearbeiten', onclick: () => userForm(u) }, icon('edit')),
+          u.role !== 'admin' ? h('button', { class: 'icon-btn', title: 'Rundown-Freigaben', onclick: () => userAccessModal(u, load) }, icon('lock')) : null,
           h('button', { class: 'icon-btn', title: 'Zugang zurücksetzen (Reset-Link oder temporäres Passwort)', onclick: () => resetPassword(u) }, icon('key')),
           h('button', { class: 'icon-btn del', title: me ? 'Du kannst dich nicht selbst löschen' : 'Löschen', disabled: me, onclick: async () => {
             if (!(await confirmDialog(`${u.name || u.email} (${u.email}) wird gelöscht und sofort abgemeldet.`, { title: 'Benutzer löschen?' }))) return;
@@ -651,6 +660,17 @@ async function viewUsers() {
     const email = h('input', { class: 'input', type: 'email', name: 'email', required: true, value: u?.email || '', autocomplete: 'off' });
     const name = h('input', { class: 'input', name: 'name', value: u?.name || '', placeholder: 'z. B. Max Mustermann', autocomplete: 'off' });
     const role = rolePicker(u?.role || 'viewer');
+    let scope = u?.restricted ? 'restricted' : 'all';
+    const scopeInfo = h('div');
+    const roleField = h('div', { class: 'field' }, h('span', null, 'Rolle'), role.el);
+    const drawScope = () => {
+      fill(scopeInfo, scope === 'restricted'
+        ? h('div', { class: 'access-info' }, icon('lock'), h('div', null, h('b', null, 'Externer Zugang – sieht nur Rundowns, die ihm freigegeben werden.'),
+            h('span', null, u ? 'Freigaben und Rolle pro Rundown legst du über das Schloss-Symbol in der Benutzerliste oder im Rundown unter „Freigaben“ fest.' : 'Nach dem Anlegen kannst du direkt die Rundowns auswählen.')))
+        : h('div', { class: 'hint', style: { marginTop: '8px' } }, 'Sieht alle Rundowns mit der unten gewählten Rolle. Einzelne Rundowns können zusätzlich mit höherer Rolle freigegeben werden.'));
+      roleField.style.display = scope === 'restricted' ? 'none' : '';
+    };
+    drawScope();
     let mode = 'invite';
     const pw = passwordField('Start-Passwort', 'Mindestens 8 Zeichen. „Generieren“ erstellt ein sicheres Passwort und kopiert es.');
     const must = h('input', { type: 'checkbox', checked: true });
@@ -673,7 +693,10 @@ async function viewUsers() {
       u ? null : h('div', { class: 'field' }, h('span', null, 'Zugang'),
         accessToggle([['invite', 'Einladungslink', 'link'], ['password', 'Passwort festlegen', 'key']], mode, (k) => { mode = k; drawAccess(); }),
         accessBox),
-      h('div', { class: 'field' }, h('span', null, 'Rolle'), role.el),
+      h('div', { class: 'field' }, h('span', null, 'Sichtbare Rundowns'),
+        accessToggle([['all', 'Alle Rundowns', 'list'], ['restricted', 'Nur freigegebene (extern)', 'lock']], scope, (k) => { scope = k; drawScope(); }),
+        scopeInfo),
+      roleField,
       err,
       h('div', { class: 'modal-foot', style: { padding: '6px 0 0' } },
         h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close() }, 'Abbrechen'),
@@ -681,7 +704,8 @@ async function viewUsers() {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       err.textContent = '';
-      const body = { email: email.value, name: name.value, role: role.get() };
+      const body = { email: email.value, name: name.value, role: scope === 'restricted' ? (u && u.role !== 'admin' ? u.role : 'viewer') : role.get(), restricted: scope === 'restricted' };
+      if (body.restricted && role.get() === 'admin' && scope !== 'restricted') body.restricted = false;
       if (!u) {
         if (mode === 'invite') Object.assign(body, { invite: true, hours: Number(hours.value) });
         else Object.assign(body, { password: pw.input.value, must_change: must.checked });
@@ -692,8 +716,9 @@ async function viewUsers() {
         m.close();
         if (u && u.id === S.user.id) { const st = await api('GET', '/api/auth/status'); S.user = st.user; return router(); }
         load();
-        if (res.link) modal({ title: 'Benutzer angelegt', body: h('div', null, h('p', null, `${res.name || res.email} wurde als ${ROLE_LABEL[res.role]} angelegt.`), linkResult(res.link, res)) });
-        else toast(u ? 'Gespeichert' : 'Benutzer angelegt', 'ok');
+        const afterCreate = () => { if (!u && res.restricted) userAccessModal(res, load); };
+        if (res.link) modal({ title: 'Benutzer angelegt', body: h('div', null, h('p', null, `${res.name || res.email} wurde ${res.restricted ? 'als externer Zugang' : 'als ' + ROLE_LABEL[res.role]} angelegt.`), linkResult(res.link, res)), onClose: afterCreate });
+        else { toast(u ? 'Gespeichert' : 'Benutzer angelegt', 'ok'); afterCreate(); }
       } catch (ex) { err.textContent = ex.message; }
     });
     const m = modal({ title: u ? 'Benutzer bearbeiten' : 'Benutzer hinzufügen', body: form, wide: true });
@@ -758,6 +783,72 @@ async function viewUsers() {
   };
 
   await load();
+}
+
+/* ================================================================== Freigaben pro Rundown */
+const SHARE_OPTS = [['', 'Kein Zugriff'], ['viewer', 'Viewer'], ['operator', 'Operator'], ['editor', 'Editor']];
+
+function shareSelect(current, inheritedLabel, onChange) {
+  const opts = SHARE_OPTS.map(([v, l]) => [v, v === '' && inheritedLabel ? '— wie Grundrolle' : l]);
+  return h('select', { class: `role-select role-${current || 'none'}`, onchange: (e) => { e.target.className = `role-select role-${e.target.value || 'none'}`; onChange(e.target.value || null); } },
+    opts.map(([v, l]) => h('option', { value: v, selected: (current || '') === v }, l)));
+}
+
+/** Rundown-Seite / Übersicht: wer darf diesen Rundown sehen? (Admin) */
+async function accessModal(rd) {
+  const body = h('div', { class: 'acc' });
+  let list;
+  const load = async () => { list = await api('GET', `/api/rundowns/${rd.id}/access`); draw(); };
+  const row = (u) => h('div', { class: 'acc-row' + (u.effective ? '' : ' none') },
+    h('div', { class: `avatar sm role-${u.restricted ? 'viewer' : u.role}` }, initials(u)),
+    h('div', { class: 'acc-who' },
+      h('b', null, u.name || u.email.split('@')[0], u.restricted ? h('span', { class: 'st-badge bk-ext' }, icon('lock'), 'Extern') : null),
+      h('span', null, u.email)),
+    h('div', { class: 'acc-eff' }, u.effective ? h('span', { class: `role-badge role-${u.effective}` }, ROLE_LABEL[u.effective]) : h('span', { class: 'muted' }, 'kein Zugriff')),
+    u.role === 'admin' ? h('span', { class: 'muted acc-fixed' }, 'Admin – immer Zugriff')
+      : shareSelect(u.share, u.restricted ? null : `Grundrolle: ${ROLE_LABEL[u.role]}`, async (role) => {
+        try { await api('PUT', `/api/rundowns/${rd.id}/access/${u.id}`, { role }); toast('Freigabe gespeichert', 'ok'); load(); } catch (e) { toast(e.message, 'err'); load(); }
+      }));
+  const draw = () => {
+    const ext = list.filter((u) => u.restricted), team = list.filter((u) => !u.restricted);
+    fill(body,
+      h('p', null, 'Externe Benutzer sehen nur Rundowns, die ihnen hier freigegeben werden – mit der Rolle, die du wählst. Für interne Benutzer kannst du in diesem Rundown zusätzlich eine höhere Rolle vergeben.'),
+      h('div', { class: 'col-sep' }, `Externe (${ext.length})`),
+      ext.length ? h('div', { class: 'acc-list' }, ext.map(row)) : h('div', { class: 'hint' }, 'Keine externen Benutzer. Unter „Benutzer“ beim Anlegen „Nur freigegebene (extern)“ wählen.'),
+      h('div', { class: 'col-sep' }, `Team (${team.length})`),
+      h('div', { class: 'acc-list' }, team.map(row)));
+  };
+  await load();
+  modal({ title: `Freigaben · ${rd.title}`, body, wide: true });
+}
+
+/** Benutzerverwaltung: welche Rundowns darf dieser Benutzer sehen? (Admin) */
+async function userAccessModal(u, onChange) {
+  const body = h('div', { class: 'acc' });
+  let list, q = '';
+  const load = async () => { list = await api('GET', `/api/users/${u.id}/access`); draw(); };
+  const search = h('input', { class: 'input', type: 'search', placeholder: 'Rundown suchen …', oninput: (e) => { q = e.target.value.toLowerCase(); draw(); } });
+  const listBox = h('div', { class: 'acc-list' });
+  const draw = () => {
+    const shown = list.filter((r) => !q || r.title.toLowerCase().includes(q));
+    const n = list.filter((r) => r.share).length;
+    sumEl.textContent = u.restricted ? `${n} von ${list.length} Rundowns freigegeben` : `${n} zusätzliche Freigabe${n === 1 ? '' : 'n'}`;
+    fill(listBox, shown.length ? shown.map((r) => h('div', { class: 'acc-row' + (r.effective ? '' : ' none') },
+      h('div', { class: 'acc-who' }, h('b', null, r.title), h('span', null, r.event_date ? fmtDate(r.event_date) : 'ohne Datum')),
+      h('div', { class: 'acc-eff' }, r.effective ? h('span', { class: `role-badge role-${r.effective}` }, ROLE_LABEL[r.effective]) : h('span', { class: 'muted' }, 'kein Zugriff')),
+      shareSelect(r.share, u.restricted ? null : `Grundrolle: ${ROLE_LABEL[u.role]}`, async (role) => {
+        try { await api('PUT', `/api/users/${u.id}/access/${r.id}`, { role }); await load(); onChange?.(); } catch (e) { toast(e.message, 'err'); load(); }
+      }))) : h('div', { class: 'hint' }, 'Keine Rundowns gefunden.'));
+  };
+  const sumEl = h('span', { class: 'muted' });
+  fill(body,
+    u.restricted
+      ? h('div', { class: 'access-info', style: { marginTop: 0 } }, icon('lock'), h('div', null, h('b', null, `${u.name || u.email} ist ein externer Zugang.`), h('span', null, 'Er sieht nur die Rundowns, die du hier freigibst – mit der gewählten Rolle.')))
+      : h('p', null, `${u.name || u.email} sieht alle Rundowns als ${ROLE_LABEL[u.role]}. Hier kannst du in einzelnen Rundowns eine höhere Rolle vergeben.`),
+    h('div', { class: 'acc-tools' }, search, sumEl),
+    listBox);
+  await load();
+  modal({ title: `Rundown-Freigaben · ${u.name || u.email}`, body, wide: true });
 }
 
 /* ================================================================== System & Backups */
@@ -906,6 +997,7 @@ async function viewRundown(id) {
   let p;
   try { p = await api('GET', '/api/rundowns/' + id); }
   catch (e) { toast(e.message, 'err'); return go('#/rundowns'); }
+  S.myRole = p.my_role || S.user.role;
   openRundown(p);
   connect({ rundown: id, view: 'editor' }, rundownHandlers(() => api('GET', '/api/rundowns/' + id)));
 }
@@ -918,7 +1010,8 @@ function rundownHandlers(fetcher) {
       if (!S.rd || m.rundownId !== S.rd.rundown.id) return;
       S.rd.live = m.live; S.offset = m.serverNow - Date.now(); S.liveKey = ''; tick();
     },
-    deleted: () => { toast('Dieser Rundown wurde gelöscht'); go('#/rundowns'); },
+    deleted: (d) => { toast(d?.reason === 'access' ? 'Dein Zugriff auf diesen Rundown wurde entzogen' : 'Dieser Rundown wurde gelöscht'); go('#/rundowns'); },
+    access: async () => { const st = await api('GET', '/api/auth/status').catch(() => null); if (st?.user) S.user = st.user; toast('Deine Rechte wurden geändert'); router(); },
     gone: () => { disconnect(); document.body.replaceChildren(topbar(), h('main', null, h('div', { class: 'page page-narrow' }, h('div', { class: 'empty' }, 'Dieser öffentliche Link wurde deaktiviert.')))); },
     reconnect: async () => { try { applyPayload(await fetcher()); } catch { /* */ } },
   };
@@ -971,7 +1064,8 @@ function buildRundownPage() {
     h('button', { class: 'btn', onclick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${rd.id}`, '_blank') }, icon('external'), h('span', { class: 'lbl' }, 'Live-Ansicht')),
     h('button', { class: 'btn', onclick: (e) => viewMenu(e.currentTarget) }, icon('eye'), h('span', { class: 'lbl' }, 'Ansicht')),
     !S.publicToken ? h('button', { class: 'btn', onclick: publicLinkModal }, icon('share'), h('span', { class: 'lbl' }, 'Öffentlicher Link')) : null,
-    can('editor') ? h('button', { class: 'btn', onclick: apiModal }, icon('code'), h('span', { class: 'lbl' }, 'API')) : null);
+    can('editor') ? h('button', { class: 'btn', onclick: apiModal }, icon('code'), h('span', { class: 'lbl' }, 'API')) : null,
+    can('admin') && !S.publicToken ? h('button', { class: 'btn', onclick: () => accessModal(rd) }, icon('lock'), h('span', { class: 'lbl' }, 'Freigaben')) : null);
 
   R.toolbar = h('div', { class: 'toolbar' },
     h('button', { class: 'btn', onclick: () => addItem('item') }, icon('plus'), 'Programmpunkt'),
@@ -991,6 +1085,9 @@ function buildRundownPage() {
       h('div', { style: { flex: '1', minWidth: '280px' } },
         !S.publicToken ? h('a', { class: 'back', href: '#/rundowns' }, icon('arrowLeft'), 'Übersicht') : null,
         R.title,
+        !S.publicToken && S.user && (S.user.restricted || S.myRole !== S.user.role) && S.myRole !== 'admin'
+          ? h('div', { class: 'my-role-hint' }, icon('lock'), 'Deine Rolle in diesem Rundown: ', h('span', { class: `role-badge role-${S.myRole}` }, ROLE_LABEL[S.myRole])) : null,
+
         R.presence = h('div', { class: 'presence-bar' }),
         h('div', { class: 'rd-meta' },
           h('div', { class: 'grp' }, h('span', { class: 'label' }, 'Datum'), R.date),

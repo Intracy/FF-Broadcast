@@ -100,7 +100,17 @@ for (const sql of [
   'ALTER TABLE rundowns ADD COLUMN companion_rotated_at TEXT',
   'ALTER TABLE rundowns ADD COLUMN companion_rotated_by TEXT',
   'ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE users ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0',
 ]) { try { db.exec(sql); } catch { /* Spalte existiert bereits */ } }
+
+// Freigaben einzelner Rundowns für einzelne Benutzer (z. B. externe Dienstleister)
+db.exec(`CREATE TABLE IF NOT EXISTS rundown_access (
+  rundown_id INTEGER NOT NULL REFERENCES rundowns(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (rundown_id, user_id)
+)`);
 
 // Einmal-Links zum Zurücksetzen/Einladen (gespeichert wird nur der SHA-256-Fingerabdruck)
 db.exec(`CREATE TABLE IF NOT EXISTS reset_tokens (
@@ -145,6 +155,12 @@ export const Q = {
   userByEmail: db.prepare('SELECT * FROM users WHERE email=?'),
   users: db.prepare('SELECT * FROM users ORDER BY email'),
   insertUser: db.prepare('INSERT INTO users (email,name,password_hash,role) VALUES (?,?,?,?)'),
+  accessGet: db.prepare('SELECT role FROM rundown_access WHERE rundown_id=? AND user_id=?'),
+  accessSet: db.prepare('INSERT INTO rundown_access (rundown_id,user_id,role) VALUES (?,?,?) ON CONFLICT(rundown_id,user_id) DO UPDATE SET role=excluded.role'),
+  accessDel: db.prepare('DELETE FROM rundown_access WHERE rundown_id=? AND user_id=?'),
+  accessByUser: db.prepare('SELECT a.rundown_id, a.role, r.title, r.event_date FROM rundown_access a JOIN rundowns r ON r.id=a.rundown_id WHERE a.user_id=? ORDER BY COALESCE(r.event_date,\'9999\') DESC, r.id DESC'),
+  accessByRundown: db.prepare('SELECT user_id, role FROM rundown_access WHERE rundown_id=?'),
+  accessCount: db.prepare('SELECT COUNT(*) AS n FROM rundown_access WHERE user_id=?'),
   insertUserFull: db.prepare('INSERT INTO users (email,name,password_hash,role,must_change) VALUES (?,?,?,?,?)'),
   insertReset: db.prepare('INSERT INTO reset_tokens (user_id,token_hash,purpose,created_by,expires_at) VALUES (?,?,?,?,?)'),
   resetByHash: db.prepare('SELECT * FROM reset_tokens WHERE token_hash=?'),

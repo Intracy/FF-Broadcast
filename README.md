@@ -28,6 +28,8 @@ Selbst gehostete Rundown-App für Live-Produktionen und Events. Läuft auf NAS (
 | **Operator** | ansehen + Live-Steuerung |
 | **Viewer** | nur ansehen |
 
+**Externe Benutzer (z. B. Dienstleister):** Beim Anlegen „Nur freigegebene (extern)“ wählen. Sie sehen dann ausschließlich Rundowns, die ein Admin ihnen freigibt – mit einer Rolle pro Rundown (Viewer, Operator oder Editor). Freigaben verwaltest du im Rundown unter **Freigaben** oder in der Benutzerliste über das Schloss-Symbol. Interne Benutzer können in einzelnen Rundowns zusätzlich eine höhere Rolle bekommen (z. B. Viewer allgemein, aber Editor für „Finale“). Externe können keine neuen Rundowns anlegen; alles wird serverseitig geprüft – auch für API und Live-Ansicht.
+
 Beim ersten Aufruf legst du im Browser das erste Admin-Konto an.
 
 ---
