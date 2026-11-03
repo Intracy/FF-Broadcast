@@ -222,11 +222,64 @@ function broadcastLive(rid) {
 let lobbyTimer = null;
 function broadcastLobby() {
   clearTimeout(lobbyTimer);
-  lobbyTimer = setTimeout(() => { for (const c of clients) if (c.lobby) sse(c, 'rundowns', { t: Date.now() }); }, 300);
+  lobbyTimer = setTimeout(() => { for (const c of clients) if (c.lobby) { sse(c, 'rundowns', { t: Date.now() }); sse(c, 'online', { t: Date.now() }); } }, 300);
 }
 
 function kickUser(userId) {
   for (const c of clients) if (c.user && c.user.id === userId) { sse(c, 'logout', {}); c.res.end(); }
+}
+
+/* ------------------------------------------------------------------ Präsenz: Wer ist gerade online? */
+// Jede offene Verbindung (Tab/Gerät) ist ein Client. Angemeldete Clients zählen als Person,
+// öffentliche Links nur als anonyme Zuschauer. Der Fokus zeigt, welches Feld gerade bearbeitet wird.
+const FOCUS_FIELD_RE = /^(title|description|duration|cell:\d+)$/;
+
+function presenceFor(rid) {
+  const people = new Map();
+  let viewers = 0;
+  for (const c of clients) {
+    if (c.rundownId !== rid) continue;
+    if (c.isPublic || !c.user) { viewers++; continue; }
+    let p = people.get(c.user.id);
+    if (!p) {
+      p = { id: c.user.id, name: c.user.name || c.user.email.split('@')[0], email: c.user.email, role: c.user.role, devices: 0, views: [], since: c.since, focus: [] };
+      people.set(c.user.id, p);
+    }
+    p.devices++;
+    if (!p.views.includes(c.view)) p.views.push(c.view);
+    p.since = Math.min(p.since, c.since);
+    if (c.focus) p.focus.push({ ...c.focus, clientId: c.id });
+  }
+  return { rundownId: rid, users: [...people.values()].sort((a, b) => a.since - b.since), viewers };
+}
+
+/** Wer ist in welchem Rundown (für die Übersicht) bzw. überhaupt online (für die Benutzerliste) */
+function onlineSummary() {
+  const byRundown = {};
+  const users = {};
+  for (const c of clients) {
+    if (!c.user) continue;
+    const u = (users[c.user.id] ||= { id: c.user.id, rundowns: new Set(), devices: 0 });
+    u.devices++;
+    if (c.rundownId) {
+      u.rundowns.add(c.rundownId);
+      const list = (byRundown[c.rundownId] ||= new Map());
+      if (!list.has(c.user.id)) list.set(c.user.id, { id: c.user.id, name: c.user.name || c.user.email.split('@')[0], role: c.user.role });
+    }
+  }
+  return { byRundown, users };
+}
+
+const presenceTimers = new Map();
+function broadcastPresence(rid) {
+  if (!rid) return;
+  clearTimeout(presenceTimers.get(rid));
+  presenceTimers.set(rid, setTimeout(() => {
+    presenceTimers.delete(rid);
+    const msg = presenceFor(rid);
+    for (const c of clients) if (c.rundownId === rid && !c.isPublic) sse(c, 'presence', msg);
+  }, 120));
+  broadcastLobby();
 }
 
 setInterval(() => { for (const c of clients) { try { c.res.write(`: ping ${Date.now()}\n\n`); } catch { /* */ } } }, 20000).unref();
@@ -361,7 +414,13 @@ DELETE('/api/users/:id/reset-link', need('admin'), (req) => {
   return userOut(u);
 });
 
-GET('/api/users', need('admin'), () => Q.users.all().map(userOut));
+GET('/api/users', need('admin'), () => {
+  const { users } = onlineSummary();
+  return Q.users.all().map((u) => {
+    const o = users[u.id];
+    return { ...userOut(u), online: !!o, online_devices: o?.devices || 0, online_rundowns: o ? [...o.rundowns] : [] };
+  });
+});
 
 POST('/api/users', need('admin'), async (req) => {
   const { email, name, password, role, invite, must_change, hours } = req.body;
@@ -419,10 +478,13 @@ DELETE('/api/users/:id', need('admin'), (req) => {
 });
 
 // ---------- Rundowns
-GET('/api/rundowns', need('viewer'), () =>
-  Q.rundowns.all().map((r) => {
+GET('/api/rundowns', need('viewer'), () => {
+  const summary = onlineSummary();
+  return Q.rundowns.all().map((r) => {
     const live = parseLive(r.live);
+    const online = summary.byRundown[r.id] ? [...summary.byRundown[r.id].values()] : [];
     const out = {
+      online,
       id: r.id, title: r.title, event_date: r.event_date, start_time: r.start_time, item_count: r.item_count, total: r.total,
       end_time: fmtClock(parseClock(r.start_time) + (r.total || 0)),
       live: !!live.running, updated_at: r.updated_at, public_enabled: !!r.public_enabled,
@@ -433,7 +495,8 @@ GET('/api/rundowns', need('viewer'), () =>
       if (st.running) Object.assign(out, { live_title: st.current.title, live_index: st.index + 1, live_remaining: Math.round(st.remaining), live_progress: Math.round(st.progress * 100), live_delta: Math.round(st.delta) });
     }
     return out;
-  }));
+  });
+});
 
 const DEFAULT_COLUMNS = ['Notizen', 'GFX', 'Ort', 'Ton'];
 
@@ -892,10 +955,24 @@ POST('/api/backups/:name/restore', need('admin'), (req, res) => {
   return { ok: true, summary, safety: safety.name, restarting: true };
 });
 
+// ---------- Präsenz
+POST('/api/presence/focus', need('viewer'), (req) => {
+  const c = [...clients].find((x) => x.id === String(req.body.clientId || req.headers['x-client-id'] || ''));
+  if (!c || !c.user || c.user.id !== req.user.id) fail(404, 'Verbindung nicht gefunden');
+  const itemId = Number(req.body.itemId);
+  const f = String(req.body.field || '');
+  const next = itemId && FOCUS_FIELD_RE.test(f) ? { itemId, field: f } : null;
+  if (JSON.stringify(next) !== JSON.stringify(c.focus)) { c.focus = next; broadcastPresence(c.rundownId); }
+  return { ok: true };
+});
+
+GET('/api/presence/:id', need('viewer'), (req) => presenceFor(getRundown(req.params.id).id));
+
 // ---------- Echtzeit-Stream
 GET('/api/events', (req, res) => {
   const q = req.query;
-  const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false };
+  const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false,
+    view: ['editor', 'live', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
   if (q.public) {
     const rd = publicRundown(q.public);
     client.rundownId = rd.id;
@@ -914,7 +991,10 @@ GET('/api/events', (req, res) => {
   res.write(`retry: 2000\n\n`);
   clients.add(client);
   sse(client, 'hello', { clientId: client.id, serverNow: Date.now(), version: VERSION });
-  req.on('close', () => clients.delete(client));
+  if (client.rundownId) sse(client, 'presence', presenceFor(client.rundownId));
+  broadcastPresence(client.rundownId);
+  if (!client.rundownId && client.user) broadcastLobby();
+  req.on('close', () => { clients.delete(client); broadcastPresence(client.rundownId); if (!client.rundownId && client.user) broadcastLobby(); });
   return undefined;
 });
 
