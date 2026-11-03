@@ -282,7 +282,7 @@ async function load() {
 }
 
 function connect() {
-  es = new EventSource('/api/events?' + new URLSearchParams(publicToken ? { public: publicToken } : { rundown: rundownId }));
+  es = new EventSource('/api/events?' + new URLSearchParams(publicToken ? { public: publicToken } : { rundown: rundownId, view: 'live' }));
   let first = true;
   es.addEventListener('hello', () => { if (!first) load(); first = false; });
   es.addEventListener('rundown', (e) => apply(JSON.parse(e.data)));

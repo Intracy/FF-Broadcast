@@ -33,6 +33,17 @@ export function secureDataDir() {
   }
 }
 
+// Wiederherstellung aus einem Backup (vom Admin angestoßen, wird beim Start übernommen)
+{
+  const pending = path.join(DATA_DIR, 'restore-pending.db');
+  if (fs.existsSync(pending)) {
+    const dbFile = path.join(DATA_DIR, 'rundown.db');
+    for (const ext of ['-wal', '-shm']) { try { fs.unlinkSync(dbFile + ext); } catch { /* */ } }
+    fs.renameSync(pending, dbFile);
+    console.log('\n  ✓ Backup wurde wiederhergestellt.');
+  }
+}
+
 export const db = new DatabaseSync(path.join(DATA_DIR, 'rundown.db'));
 db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
 secureDataDir();

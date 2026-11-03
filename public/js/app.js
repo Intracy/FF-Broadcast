@@ -60,6 +60,7 @@ function connect(params, handlers) {
     S.clientId = d.clientId;
     if (d.version && S.version && d.version !== S.version) showUpdateBanner(d.version);
     banner?.remove(); banner = null;
+    focusSent = 'null';
     if (S.helloCount++ > 0) handlers.reconnect?.();
   });
   es.onerror = () => {
@@ -103,7 +104,7 @@ function teardown() {
   disconnect();
   clearInterval(tickTimer); tickTimer = null;
   closePop();
-  S.rd = null; S.myRole = null; R = {};
+  S.rd = null; S.myRole = null; R = {}; S.presence = null; focusSent = 'null';
   $$('.modal-back').forEach((m) => m.remove());
 }
 
@@ -120,6 +121,7 @@ async function router() {
   let m;
   if ((m = hash.match(/^#\/rundown\/(\d+)/))) return viewRundown(Number(m[1]));
   if (hash === '#/users' && can('admin')) return viewUsers();
+  if (hash === '#/system' && can('admin')) return viewSystem();
   if (hash !== '#/rundowns') history.replaceState(null, '', '#/rundowns');
   return viewRundowns();
 }
@@ -137,6 +139,7 @@ function userMenu(anchor) {
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi', onclick: () => { closePop(); changePassword(); } }, icon('key'), 'Passwort ändern'),
     can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/users'); } }, icon('users'), 'Benutzer verwalten') : null,
+    can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/system'); } }, icon('database'), 'System & Backups') : null,
     h('button', { class: 'mi', onclick: () => { closePop(); document.querySelector('.topbar .theme-toggle')?.click(); } }, icon(theme() === 'dark' ? 'sun' : 'moon'), theme() === 'dark' ? 'Helles Design' : 'Dunkles Design'),
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi danger-mi', onclick: () => { closePop(); logout(); } }, icon('logout'), 'Abmelden'),
@@ -156,7 +159,8 @@ function topbar(active) {
     brand('a', { href: '#/rundowns' }),
     h('nav', { class: 'nav' },
       h('a', { href: '#/rundowns', class: active === 'rundowns' ? 'active' : '' }, icon('list'), h('span', null, 'Rundowns')),
-      can('admin') ? h('a', { href: '#/users', class: active === 'users' ? 'active' : '' }, icon('users'), h('span', null, 'Benutzer')) : null),
+      can('admin') ? h('a', { href: '#/users', class: active === 'users' ? 'active' : '' }, icon('users'), h('span', null, 'Benutzer')) : null,
+      can('admin') ? h('a', { href: '#/system', class: active === 'system' ? 'active' : '' }, icon('database'), h('span', null, 'System')) : null),
     h('div', { class: 'spacer' }),
     themeToggle(),
     h('button', { class: 'user-btn', title: 'Konto', onclick: (e) => userMenu(e.currentTarget) },
@@ -376,6 +380,7 @@ async function viewRundowns() {
       h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' })),
     h('div', { class: 'progress' }, h('span', { style: { width: (r.live_progress || 0) + '%' } }))) : null;
 
+  const othersOnline = (r) => (r.online || []).filter((p) => p.id !== S.user.id);
   const card = (r) => h('article', { class: `ov-card st-${rdStatus(r)}`, onclick: () => go('#/rundown/' + r.id) },
     h('div', { class: 'ov-card-head' }, dateTile(r),
       h('div', { class: 'ov-card-title' },
@@ -388,13 +393,15 @@ async function viewRundowns() {
       h('div', null, h('span', null, 'Dauer'), h('b', { class: 'mono' }, fmtDuration(r.total, { hours: true }))),
       h('div', null, h('span', null, 'Punkte'), h('b', null, String(r.item_count)))),
     h('div', { class: 'ov-foot' },
-      h('span', { class: 'muted' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · ${r.column_count} Spalten`),
+      othersOnline(r).length ? h('span', { class: 'ov-online' }, avatarStack(othersOnline(r), { title: 'Gerade geöffnet von ' + othersOnline(r).map((p) => p.name).join(', ') }), `${othersOnline(r).length} online`)
+        : h('span', { class: 'muted' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · ${r.column_count} Spalten`),
       h('span', { class: 'muted' }, 'geändert ' + relTime(r.updated_at))));
 
   const row = (r) => h('div', { class: `ov-row st-${rdStatus(r)}`, onclick: () => go('#/rundown/' + r.id) },
     dateTile(r),
     h('div', { class: 'ov-row-main' },
-      h('div', { class: 'ov-row-title' }, h('b', null, r.title), statusBadge(r), r.public_enabled ? h('span', { class: 'st-badge st-public' }, icon('globe')) : null),
+      h('div', { class: 'ov-row-title' }, h('b', null, r.title), statusBadge(r), r.public_enabled ? h('span', { class: 'st-badge st-public' }, icon('globe')) : null,
+        avatarStack(othersOnline(r), { title: 'Gerade geöffnet von ' + othersOnline(r).map((p) => p.name).join(', ') })),
       r.live ? h('div', { class: 'ov-row-live' }, h('span', { class: 'dot' }), r.live_title ? `${r.live_index}. ${r.live_title}` : 'Live', h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' }))
         : h('div', { class: 'ov-row-sub' },
           h('span', { class: 'sub-d' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · geändert ${relTime(r.updated_at)}`),
@@ -457,7 +464,7 @@ async function viewRundowns() {
 
   const load = async () => { rds = await api('GET', '/api/rundowns'); fetchedAt = Date.now(); draw(); };
   await load();
-  connect({}, { rundowns: debounce(load, 200), reconnect: load, access: async () => { const st = await api('GET', '/api/auth/status').catch(() => null); if (st?.user) S.user = st.user; router(); } });
+  connect({ view: 'overview' }, { rundowns: debounce(load, 200), reconnect: load, access: async () => { const st = await api('GET', '/api/auth/status').catch(() => null); if (st?.user) S.user = st.user; router(); } });
 }
 
 function newRundown() {
@@ -496,6 +503,19 @@ function relTime(sqlDate) {
   if (diff < 172800) return 'gestern';
   if (diff < 7 * 86400) return `vor ${Math.floor(diff / 86400)} Tagen`;
   return d.toLocaleDateString('de-DE');
+}
+
+const PRESENCE_COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#a3e635'];
+const userColor = (id) => PRESENCE_COLORS[Math.abs(Number(id) || 0) % PRESENCE_COLORS.length];
+const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
+
+/** Kleiner Avatar-Stapel für eine Liste von Personen */
+function avatarStack(people, { max = 4, size = 'xs', title = '' } = {}) {
+  if (!people?.length) return null;
+  const shown = people.slice(0, max);
+  return h('span', { class: `av-stack av-${size}`, title: title || people.map((p) => p.name).join(', ') },
+    shown.map((p) => h('span', { class: 'av', style: `--uc:${userColor(p.id)}` }, initials(p))),
+    people.length > max ? h('span', { class: 'av av-more' }, '+' + (people.length - max)) : null);
 }
 
 function initials(u) {
@@ -553,7 +573,8 @@ async function viewUsers() {
 
   const draw = () => {
     const counts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.role === r).length]));
-    sub.textContent = `${users.length} ${users.length === 1 ? 'Benutzer' : 'Benutzer'} · ${counts.admin} Admin${counts.admin === 1 ? '' : 's'}`;
+    const on = users.filter((u) => u.online).length;
+    sub.textContent = `${users.length} Benutzer · ${counts.admin} Admin${counts.admin === 1 ? '' : 's'}` + (on ? ` · ${on} online` : '');
     chips.replaceChildren(...[['all', 'Alle', users.length], ...ROLES.slice().reverse().map((r) => [r, ROLE_LABEL[r], counts[r]])].map(([k, l, n]) =>
       h('button', { class: 'chip' + (filter === k ? ' sel' : ''), onclick: () => { filter = k; draw(); } }, l, h('span', { class: 'n' }, String(n)))));
     const shown = users.filter((u) => (filter === 'all' || u.role === filter) && (!query || u.email.toLowerCase().includes(query) || (u.name || '').toLowerCase().includes(query)));
@@ -574,7 +595,7 @@ async function viewUsers() {
       }, ROLES.slice().reverse().map((r) => h('option', { value: r, selected: r === u.role }, ROLE_LABEL[r])));
       if (u.restricted) { sel.disabled = true; sel.title = 'Externe Benutzer haben Rollen pro Rundown – siehe Schloss-Symbol'; sel.replaceChildren(h('option', null, 'pro Rundown')); sel.className = 'role-select role-viewer'; }
       return h('div', { class: 'user-row' },
-        h('div', { class: `avatar role-${u.role}` }, initials(u)),
+        h('div', { class: `avatar role-${u.role}` + (u.online ? ' is-online' : '') }, initials(u)),
         h('div', { class: 'u-info' },
           h('div', { class: 'u-name' }, u.name || u.email.split('@')[0], me ? h('span', { class: 'tag' }, 'Du') : null,
             u.restricted ? h('span', { class: 'st-badge bk-ext', title: 'Sieht nur freigegebene Rundowns' }, icon('lock'), `Extern · ${u.share_count} ${u.share_count === 1 ? 'Rundown' : 'Rundowns'}`) : null,
@@ -584,7 +605,9 @@ async function viewUsers() {
             !u.pending && u.open_link ? h('span', { class: 'st-badge st-public', title: 'Reset-Link gültig bis ' + new Date(u.open_link.expires_at).toLocaleString('de-DE') }, icon('link'), 'Reset-Link aktiv') : null),
           h('div', { class: 'u-mail' }, u.email)),
         h('div', { class: 'u-role' }, sel),
-        h('div', { class: 'u-last', title: u.last_login ? new Date(u.last_login.replace(' ', 'T') + 'Z').toLocaleString('de-DE') : '' }, h('span', { class: 'lbl' }, 'Letzter Login'), relTime(u.last_login)),
+        u.online
+          ? h('div', { class: 'u-last is-online', title: `${u.online_devices} ${u.online_devices === 1 ? 'Gerät' : 'Geräte'}` }, h('span', { class: 'lbl' }, 'Status'), h('span', { class: 'online-txt' }, h('i', { class: 'on-dot' }), 'Jetzt online'))
+          : h('div', { class: 'u-last', title: u.last_login ? new Date(u.last_login.replace(' ', 'T') + 'Z').toLocaleString('de-DE') : '' }, h('span', { class: 'lbl' }, 'Letzter Login'), relTime(u.last_login)),
         h('div', { class: 'u-actions' },
           h('button', { class: 'icon-btn', title: 'Bearbeiten', onclick: () => userForm(u) }, icon('edit')),
           u.role !== 'admin' ? h('button', { class: 'icon-btn', title: 'Rundown-Freigaben', onclick: () => userAccessModal(u, load) }, icon('lock')) : null,
@@ -597,6 +620,7 @@ async function viewUsers() {
   };
 
   const load = async () => { users = await api('GET', '/api/users'); draw(); };
+  connect({ view: 'users' }, { online: debounce(load, 300), reconnect: load });
 
   const HOURS = [[1, '1 Stunde'], [24, '24 Stunden'], [72, '3 Tage'], [168, '7 Tage']];
   const linkUrl = (token) => `${location.origin}/#/reset/${token}`;
@@ -827,6 +851,134 @@ async function userAccessModal(u, onChange) {
   modal({ title: `Rundown-Freigaben · ${u.name || u.email}`, body, wide: true });
 }
 
+/* ================================================================== System & Backups */
+const fmtBytes = (b) => b == null ? '–' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : b < 1073741824 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1073741824).toFixed(1)} GB`;
+const fmtDateTime = (ms) => new Date(ms).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+function relFuture(ms) {
+  const d = (ms - Date.now()) / 1000;
+  if (d < 60) return 'in Kürze';
+  if (d < 3600) return `in ${Math.round(d / 60)} Min.`;
+  if (d < 86400) return `in ${Math.round(d / 3600)} Std.`;
+  return `in ${Math.round(d / 86400)} Tagen`;
+}
+const KIND_ICON = { auto: 'history', manuell: 'user', 'vor-wiederherstellung': 'shield', 'vor-loeschen': 'trash', upload: 'upload' };
+
+async function viewSystem() {
+  let data;
+  const head = h('div', { class: 'page-head' },
+    h('div', null, h('div', { class: 'label' }, 'Verwaltung'), h('h1', null, 'System & Backups'), h('div', { class: 'muted', style: { marginTop: '4px' } }, 'Sicherungen der kompletten Datenbank: Rundowns, Benutzer, Links und Tokens.')),
+    h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+      h('button', { class: 'btn', onclick: () => fileIn.click() }, icon('upload'), 'Backup hochladen'),
+      h('button', { class: 'btn primary', onclick: () => backupNow() }, icon('database'), 'Jetzt sichern')));
+  const fileIn = h('input', { type: 'file', accept: '.db,application/vnd.sqlite3,application/octet-stream', style: { display: 'none' }, onchange: (e) => upload(e.target.files[0]) });
+  const statusBox = h('div', { class: 'bk-status' });
+  const listBox = h('div', { class: 'bk-list' });
+  shell('system', h('div', { class: 'page page-narrow' }, head, fileIn, statusBox,
+    h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), h('span', { class: 'muted bk-sum' })), listBox,
+    h('div', { class: 'sec-info', style: { marginTop: '22px' } },
+      h('div', null, icon('shield'), h('span', null, h('b', null, 'Backups enthalten alle Daten'), ' inkl. E-Mail-Adressen, Passwort-Hashes, API-Tokens und öffentlicher Links. Heruntergeladene Dateien bitte sicher aufbewahren.')),
+      h('div', null, icon('hardDrive'), h('span', null, h('b', null, 'Tipp: '), 'Backups zusätzlich auf einem anderen Datenträger ablegen (USB-Stick, NAS), z. B. mit der Umgebungsvariable ', h('code', null, 'BACKUP_DIR'), ' – fällt die SD-Karte oder Festplatte aus, sind sie sonst mit weg.')))));
+
+  const load = async () => { data = await api('GET', '/api/backups'); draw(); };
+  const draw = () => {
+    const st = data.status, s = st.settings, lock = st.env_locked;
+    const sel = (key, opts, fmt) => h('select', { class: 'input sort-sel', disabled: lock[key], title: lock[key] ? 'Per Umgebungsvariable festgelegt' : '', onchange: (e) => save({ [key]: Number(e.target.value) }) },
+      opts.map((v) => h('option', { value: v, selected: v === s[key] }, fmt(v))));
+    fill(statusBox,
+      h('div', { class: 'card bk-card' },
+        h('div', { class: 'bk-card-top' },
+          h('div', { class: 'bk-ico' + (s.enabled ? ' on' : '') }, icon('history')),
+          h('div', { class: 'bk-title' },
+            h('b', null, s.enabled ? 'Automatische Backups sind aktiv' : 'Automatische Backups sind aus'),
+            h('span', null, s.enabled ? `Alle ${s.interval_hours === 168 ? '7 Tage' : s.interval_hours + ' Std.'} · die letzten ${s.keep} automatischen werden behalten` : 'Es werden nur manuelle Backups und Sicherungen vor dem Löschen erstellt.')),
+          h('label', { class: 'switch', title: lock.enabled ? 'Per Umgebungsvariable festgelegt' : '' }, h('input', { type: 'checkbox', checked: s.enabled, disabled: lock.enabled, onchange: (e) => save({ enabled: e.target.checked }) }))),
+        h('div', { class: 'bk-grid' },
+          h('div', null, h('span', null, 'Letztes Backup'), h('b', null, st.last ? relTime(new Date(st.last.created_at).toISOString().replace('T', ' ').slice(0, 19)) : 'noch keins'), st.last ? h('small', null, fmtDateTime(st.last.created_at)) : null),
+          h('div', null, h('span', null, 'Nächstes automatisch'), h('b', null, st.next_at ? relFuture(st.next_at) : '–'), st.next_at ? h('small', null, fmtDateTime(st.next_at)) : null),
+          h('div', null, h('span', null, 'Intervall'), sel('interval_hours', st.intervals, (v) => v === 168 ? 'wöchentlich' : v === 1 ? 'stündlich' : `alle ${v} Std.`)),
+          h('div', null, h('span', null, 'Aufbewahren'), sel('keep', st.keeps, (v) => `letzte ${v}`)),
+          h('div', { class: 'bk-wide' }, h('span', null, 'Speicherort'), h('code', { title: st.dir }, st.dir), h('small', null, `${st.count} Backups · ${fmtBytes(st.total_bytes)}` + (st.free_bytes != null ? ` · ${fmtBytes(st.free_bytes)} frei` : '') + (st.dir_is_default ? '' : ' · eigener Speicherort (BACKUP_DIR)')))),
+        st.last_error ? h('div', { class: 'danger-box', style: { marginTop: '12px', marginBottom: 0 } }, icon('alert'), h('div', null, h('b', null, 'Letztes Backup fehlgeschlagen'), `${fmtDateTime(st.last_error.at)}: ${st.last_error.message}`)) : null));
+
+    $('.bk-sum').textContent = data.backups.length ? `${data.backups.length} Dateien` : '';
+    if (!data.backups.length) { fill(listBox, h('div', { class: 'ov-empty' }, icon('database'), h('b', null, 'Noch keine Backups'), h('span', null, 'Das erste automatische Backup entsteht kurz nach dem Start – oder jetzt mit „Jetzt sichern“.'))); return; }
+    fill(listBox, data.backups.map((b, i) => h('div', { class: 'bk-row' + (b.valid ? '' : ' invalid') },
+      h('div', { class: `bk-kind k-${b.kind}` }, icon(KIND_ICON[b.kind] || 'database')),
+      h('div', { class: 'bk-main' },
+        h('div', { class: 'bk-name' }, h('b', null, fmtDateTime(b.created_at)), h('span', { class: `st-badge bk-badge k-${b.kind}` }, b.kind_label), i === 0 ? h('span', { class: 'st-badge st-public' }, 'Neuestes') : null),
+        h('div', { class: 'bk-meta' },
+          b.label ? h('span', { class: 'bk-label' }, '„' + b.label + '“') : null,
+          b.valid ? h('span', null, `${b.summary.rundowns} Rundowns · ${b.summary.items} Punkte · ${b.summary.users} Benutzer`) : h('span', { class: 'red' }, 'Datei beschädigt oder unvollständig'),
+          h('span', null, fmtBytes(b.size)))),
+      h('div', { class: 'bk-act' },
+        h('a', { class: 'icon-btn', title: 'Herunterladen', href: `/api/backups/${encodeURIComponent(b.name)}/download`, download: b.name }, icon('download')),
+        b.valid ? h('button', { class: 'btn sm', onclick: () => restore(b) }, icon('rotate'), 'Wiederherstellen') : null,
+        h('button', { class: 'icon-btn del', title: 'Löschen', onclick: async () => {
+          if (!(await confirmDialog(`Backup vom ${fmtDateTime(b.created_at)} endgültig löschen?`, { title: 'Backup löschen?' }))) return;
+          try { await api('DELETE', '/api/backups/' + encodeURIComponent(b.name)); toast('Backup gelöscht', 'ok'); load(); } catch (e) { toast(e.message, 'err'); }
+        } }, icon('trash'))))));
+  };
+
+  const save = async (patch) => {
+    try { const r = await api('PATCH', '/api/backups/settings', patch); data.status = r.status; draw(); toast('Einstellungen gespeichert', 'ok'); }
+    catch (e) { toast(e.message, 'err'); load(); }
+  };
+
+  const backupNow = () => formModal({
+    title: 'Backup jetzt erstellen',
+    submitLabel: 'Sichern',
+    fields: [{ name: 'label', label: 'Bezeichnung (optional)', placeholder: 'z. B. vor dem Finale' }],
+    onSubmit: async (v) => { await api('POST', '/api/backups', { label: v.label }); toast('Backup erstellt', 'ok'); load(); },
+  });
+
+  const upload = async (file) => {
+    fileIn.value = '';
+    if (!file) return;
+    try {
+      const res = await fetch('/api/backups/upload?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Upload fehlgeschlagen');
+      toast('Backup hochgeladen und geprüft', 'ok');
+      await load();
+      if (await confirmDialog(`Die Datei enthält ${d.backup.summary.rundowns} Rundowns und ${d.backup.summary.users} Benutzer. Jetzt wiederherstellen?`, { okLabel: 'Weiter zur Wiederherstellung', danger: false, title: 'Hochgeladen' })) restore(d.backup);
+    } catch (e) { toast(e.message, 'err'); }
+  };
+
+  const restore = async (b) => {
+    const ok = await confirmTyped({
+      title: 'Backup wiederherstellen',
+      intro: `Stand vom ${fmtDateTime(b.created_at)} (${b.summary.rundowns} Rundowns, ${b.summary.users} Benutzer) ersetzt die aktuellen Daten.`,
+      points: [
+        'Alle Änderungen seit diesem Backup gehen verloren – der aktuelle Stand wird vorher automatisch als Backup „Vor Wiederherstellung“ gesichert.',
+        'Der Server startet neu; alle Benutzer werden kurz getrennt. Ein laufender Live-Durchlauf wird unterbrochen.',
+        'Benutzer, Passwörter, öffentliche Links und API-Tokens entsprechen danach dem Stand des Backups.',
+      ],
+      word: 'WIEDERHERSTELLEN',
+      okLabel: 'Jetzt wiederherstellen',
+    });
+    if (!ok) return;
+    let bootBefore = null;
+    try { bootBefore = (await (await fetch('/api/health', { cache: 'no-store' })).json()).boot; } catch { /* */ }
+    try { await api('POST', `/api/backups/${encodeURIComponent(b.name)}/restore`, { confirm: true }); }
+    catch (e) { return toast(e.message, 'err'); }
+    disconnect();
+    const msg = h('div', { class: 'restart-msg' }, 'Server startet neu …');
+    document.body.append(h('div', { class: 'restart-overlay' }, h('div', { class: 'restart-box' }, h('div', { class: 'spinner' }), h('b', null, 'Backup wird wiederhergestellt'), msg)));
+    const t0 = Date.now();
+    const poll = async () => {
+      try {
+        const r = await (await fetch('/api/health', { cache: 'no-store' })).json();
+        if (r.boot && r.boot !== bootBefore) { msg.textContent = 'Fertig – lade neu …'; setTimeout(() => location.reload(), 600); return; }
+      } catch { /* Server noch nicht da */ }
+      if (Date.now() - t0 > 30000) msg.innerHTML = 'Der Server ist noch nicht wieder erreichbar.<br>Falls er nicht als Dienst läuft, bitte von Hand neu starten – die Wiederherstellung wird beim Start übernommen.';
+      setTimeout(poll, 1000);
+    };
+    setTimeout(poll, 1500);
+  };
+
+  try { await load(); } catch (e) { toast(e.message, 'err'); }
+}
+
 /* ================================================================== Rundown-Ansicht */
 async function viewPublic(token) {
   S.publicToken = token;
@@ -847,12 +999,13 @@ async function viewRundown(id) {
   catch (e) { toast(e.message, 'err'); return go('#/rundowns'); }
   S.myRole = p.my_role || S.user.role;
   openRundown(p);
-  connect({ rundown: id }, rundownHandlers(() => api('GET', '/api/rundowns/' + id)));
+  connect({ rundown: id, view: 'editor' }, rundownHandlers(() => api('GET', '/api/rundowns/' + id)));
 }
 
 function rundownHandlers(fetcher) {
   return {
     rundown: (p) => applyPayload(p),
+    presence: (p) => { if (S.rd && p.rundownId === S.rd.rundown.id) { S.presence = p; renderPresence(); } },
     live: (m) => {
       if (!S.rd || m.rundownId !== S.rd.rundown.id) return;
       S.rd.live = m.live; S.offset = m.serverNow - Date.now(); S.liveKey = ''; tick();
@@ -934,6 +1087,8 @@ function buildRundownPage() {
         R.title,
         !S.publicToken && S.user && (S.user.restricted || S.myRole !== S.user.role) && S.myRole !== 'admin'
           ? h('div', { class: 'my-role-hint' }, icon('lock'), 'Deine Rolle in diesem Rundown: ', h('span', { class: `role-badge role-${S.myRole}` }, ROLE_LABEL[S.myRole])) : null,
+
+        R.presence = h('div', { class: 'presence-bar' }),
         h('div', { class: 'rd-meta' },
           h('div', { class: 'grp' }, h('span', { class: 'label' }, 'Datum'), R.date),
           h('div', { class: 'grp' }, h('span', { class: 'label' }, 'Start'), R.start),
@@ -1023,6 +1178,7 @@ function renderRows() {
   if (!S.rd.items.length) rows.append(h('div', { class: 'empty' }, canEdit() ? 'Noch keine Programmpunkte – füge oben einen hinzu.' : 'Noch keine Programmpunkte.'));
   requestAnimationFrame(() => rows.querySelectorAll('textarea').forEach(autosize));
 
+  renderPresence();
   R.total.textContent = fmtDuration(sched.total, { hours: true });
   R.end.textContent = fmtClock(sched.end, true);
   S.liveKey = '';
@@ -1182,11 +1338,13 @@ function initRowEvents() {
     if (e.key === 'Escape') e.target.blur();
   });
   rows.addEventListener('focusin', (e) => {
+    const fr = e.target.closest('[data-id]');
+    if (fr && e.target.dataset?.f) reportFocus(Number(fr.dataset.id), e.target.dataset.f);
     const row = e.target.closest('[data-id]');
     if (row) S.focusId = Number(row.dataset.id);
     if (e.target.dataset?.f === 'duration') setTimeout(() => e.target.select(), 0);
   });
-  rows.addEventListener('focusout', () => setTimeout(flushSaves, 0));
+  rows.addEventListener('focusout', () => { setTimeout(flushSaves, 0); setTimeout(() => { if (!R.rows?.contains(document.activeElement)) reportFocus(null); }, 50); });
   rows.addEventListener('pointerdown', (e) => {
     const grip = e.target.closest('.grip');
     if (!grip || grip.classList.contains('no-drag') || !canEdit() || e.button > 0) return;
@@ -1344,6 +1502,65 @@ async function liveAction(action, body = {}) {
     S.liveKey = '';
     tick();
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ================================================================== Präsenz */
+let focusSent = 'null', focusTimer = null;
+function reportFocus(itemId, field) {
+  if (S.publicToken || !S.clientId) return;
+  const key = JSON.stringify(itemId ? [itemId, field] : null);
+  if (key === focusSent) return;
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(() => {
+    focusSent = key;
+    api('POST', '/api/presence/focus', { clientId: S.clientId, itemId, field }).catch(() => {});
+  }, itemId ? 120 : 400);
+}
+
+function presenceMenu(anchor) {
+  const p = S.presence || { users: [], viewers: 0 };
+  const fieldName = (f) => f === 'title' ? 'Titel' : f === 'description' ? 'Beschreibung' : f === 'duration' ? 'Dauer'
+    : (S.rd.columns.find((c) => 'cell:' + c.id === f)?.name || 'Spalte');
+  const itemName = (id) => { const it = S.rd.items.find((i) => i.id === id); const nr = S.sched?.map.get(id)?.nr; return it ? `${nr ? nr + '. ' : ''}${it.title || (it.type === 'block' ? 'Block' : 'Ohne Titel')}` : ''; };
+  popover(anchor, [
+    h('div', { class: 'pres-head' }, h('b', null, 'Gerade in diesem Rundown'), h('span', null, `${p.users.length} ${p.users.length === 1 ? 'Person' : 'Personen'}` + (p.viewers ? ` · ${p.viewers} öffentl. Zuschauer` : ''))),
+    ...p.users.map((u) => h('div', { class: 'pres-row' },
+      h('span', { class: 'av av-sm', style: `--uc:${userColor(u.id)}` }, initials(u)),
+      h('div', { class: 'pres-info' },
+        h('b', null, u.name, u.id === S.user?.id ? h('span', { class: 'tag' }, 'Du') : null),
+        h('span', null, [ROLE_LABEL[u.role], u.views.map((v) => VIEW_LABEL[v] || v).join(' + '), u.devices > 1 ? `${u.devices} Geräte` : null].filter(Boolean).join(' · ')),
+        u.focus.length ? h('span', { class: 'pres-focus' }, icon('edit'), `bearbeitet ${itemName(u.focus[0].itemId)} · ${fieldName(u.focus[0].field)}`) : null),
+      h('span', { class: 'on-dot' }))),
+    p.users.length ? null : h('div', { class: 'muted', style: { padding: '8px 12px' } }, 'Niemand sonst online.'),
+  ]);
+}
+
+function renderPresence() {
+  if (!R.rows || !S.rd) return;
+  const p = S.presence || { users: [], viewers: 0 };
+  const me = S.user?.id;
+  const others = p.users.filter((u) => u.id !== me);
+  // Kopfzeile: Avatare aller anderen + Zuschauer
+  if (R.presence) {
+    fill(R.presence,
+      others.length || p.viewers ? h('button', { class: 'presence-btn', title: 'Wer ist gerade online?', onclick: (e) => presenceMenu(e.currentTarget) },
+        others.length ? avatarStack(others, { max: 5, size: 'sm' }) : null,
+        h('span', { class: 'pres-txt' },
+          others.length ? `${others.length} ${others.length === 1 ? 'weitere Person' : 'weitere Personen'} online` : '',
+          others.length && p.viewers ? ' · ' : '',
+          p.viewers ? h('span', { class: 'pres-viewers' }, icon('eye'), String(p.viewers)) : null)) : null);
+  }
+  // Zellen markieren, die andere gerade bearbeiten
+  for (const el of R.rows.querySelectorAll('.peer-edit')) { el.classList.remove('peer-edit'); el.style.removeProperty('--uc'); el.removeAttribute('data-peer'); }
+  for (const u of others) for (const f of u.focus) {
+    const row = R.rows.querySelector(`[data-id="${f.itemId}"]`);
+    const input = row?.querySelector(`[data-f="${f.field}"]`);
+    const cell = input?.closest('.cell, .block-cell');
+    if (!cell) continue;
+    cell.classList.add('peer-edit');
+    cell.style.setProperty('--uc', userColor(u.id));
+    cell.dataset.peer = u.name;
+  }
 }
 
 const followOn = () => S.prefs.follow !== false;

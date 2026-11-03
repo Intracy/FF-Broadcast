@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR } from './db.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can, rank } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
+import * as backup from './backup.js';
 import { liveStatus, fmtDuration, fmtCountdown, fmtTime, fmtClock, parseClock, parseDuration, computeSchedule } from '../shared/timing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,7 @@ const route = (method, pattern, ...handlers) => {
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '/?$');
   routes.push({ method, re, keys, handlers });
 };
+const rawRoute = (method, p, ...h) => { route(method, p, ...h); routes[routes.length - 1].raw = true; };
 const GET = (p, ...h) => route('GET', p, ...h);
 const POST = (p, ...h) => route('POST', p, ...h);
 const PATCH = (p, ...h) => route('PATCH', p, ...h);
@@ -86,6 +88,20 @@ function send(res, status, data, headers = {}) {
     ...headers,
   });
   res.end(body);
+}
+
+function readRaw(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) { reject(new HttpError(413, 'Datei zu groß')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 
 function readBody(req, limit = 2 * 1024 * 1024) {
@@ -245,11 +261,64 @@ function broadcastLive(rid) {
 let lobbyTimer = null;
 function broadcastLobby() {
   clearTimeout(lobbyTimer);
-  lobbyTimer = setTimeout(() => { for (const c of clients) if (c.lobby) sse(c, 'rundowns', { t: Date.now() }); }, 300);
+  lobbyTimer = setTimeout(() => { for (const c of clients) if (c.lobby) { sse(c, 'rundowns', { t: Date.now() }); sse(c, 'online', { t: Date.now() }); } }, 300);
 }
 
 function kickUser(userId) {
   for (const c of clients) if (c.user && c.user.id === userId) { sse(c, 'logout', {}); c.res.end(); }
+}
+
+/* ------------------------------------------------------------------ Präsenz: Wer ist gerade online? */
+// Jede offene Verbindung (Tab/Gerät) ist ein Client. Angemeldete Clients zählen als Person,
+// öffentliche Links nur als anonyme Zuschauer. Der Fokus zeigt, welches Feld gerade bearbeitet wird.
+const FOCUS_FIELD_RE = /^(title|description|duration|cell:\d+)$/;
+
+function presenceFor(rid) {
+  const people = new Map();
+  let viewers = 0;
+  for (const c of clients) {
+    if (c.rundownId !== rid) continue;
+    if (c.isPublic || !c.user) { viewers++; continue; }
+    let p = people.get(c.user.id);
+    if (!p) {
+      p = { id: c.user.id, name: c.user.name || c.user.email.split('@')[0], email: c.user.email, role: c.user.role, devices: 0, views: [], since: c.since, focus: [] };
+      people.set(c.user.id, p);
+    }
+    p.devices++;
+    if (!p.views.includes(c.view)) p.views.push(c.view);
+    p.since = Math.min(p.since, c.since);
+    if (c.focus) p.focus.push({ ...c.focus, clientId: c.id });
+  }
+  return { rundownId: rid, users: [...people.values()].sort((a, b) => a.since - b.since), viewers };
+}
+
+/** Wer ist in welchem Rundown (für die Übersicht) bzw. überhaupt online (für die Benutzerliste) */
+function onlineSummary() {
+  const byRundown = {};
+  const users = {};
+  for (const c of clients) {
+    if (!c.user) continue;
+    const u = (users[c.user.id] ||= { id: c.user.id, rundowns: new Set(), devices: 0 });
+    u.devices++;
+    if (c.rundownId) {
+      u.rundowns.add(c.rundownId);
+      const list = (byRundown[c.rundownId] ||= new Map());
+      if (!list.has(c.user.id)) list.set(c.user.id, { id: c.user.id, name: c.user.name || c.user.email.split('@')[0], role: c.user.role });
+    }
+  }
+  return { byRundown, users };
+}
+
+const presenceTimers = new Map();
+function broadcastPresence(rid) {
+  if (!rid) return;
+  clearTimeout(presenceTimers.get(rid));
+  presenceTimers.set(rid, setTimeout(() => {
+    presenceTimers.delete(rid);
+    const msg = presenceFor(rid);
+    for (const c of clients) if (c.rundownId === rid && !c.isPublic) sse(c, 'presence', msg);
+  }, 120));
+  broadcastLobby();
 }
 
 setInterval(() => { for (const c of clients) { try { c.res.write(`: ping ${Date.now()}\n\n`); } catch { /* */ } } }, 20000).unref();
@@ -280,7 +349,8 @@ function setSession(req, res, u) {
 
 /* ================================================================== API */
 
-GET('/api/health', () => ({ ok: true, version: VERSION }));
+const BOOT_ID = randomToken(6);
+GET('/api/health', () => ({ ok: true, version: VERSION, boot: BOOT_ID }));
 
 // ---------- Auth
 GET('/api/auth/status', (req) => ({ needsSetup: Q.userCount.get().n === 0, user: req.user ? userOut(req.user) : null, version: VERSION }));
@@ -421,7 +491,13 @@ DELETE('/api/users/:id/reset-link', need('admin'), (req) => {
   return userOut(u);
 });
 
-GET('/api/users', need('admin'), () => Q.users.all().map(userOut));
+GET('/api/users', need('admin'), () => {
+  const { users } = onlineSummary();
+  return Q.users.all().map((u) => {
+    const o = users[u.id];
+    return { ...userOut(u), online: !!o, online_devices: o?.devices || 0, online_rundowns: o ? [...o.rundowns] : [] };
+  });
+});
 
 POST('/api/users', need('admin'), async (req) => {
   const { email, name, password, role, invite, must_change, hours, restricted } = req.body;
@@ -484,10 +560,13 @@ DELETE('/api/users/:id', need('admin'), (req) => {
 });
 
 // ---------- Rundowns
-GET('/api/rundowns', need('viewer'), (req) =>
-  Q.rundowns.all().filter((r) => roleFor(req.user, r.id)).map((r) => {
+GET('/api/rundowns', need('viewer'), (req) => {
+  const summary = onlineSummary();
+  return Q.rundowns.all().filter((r) => roleFor(req.user, r.id)).map((r) => {
     const live = parseLive(r.live);
+    const online = summary.byRundown[r.id] ? [...summary.byRundown[r.id].values()] : [];
     const out = {
+      online,
       id: r.id, title: r.title, event_date: r.event_date, start_time: r.start_time, item_count: r.item_count, total: r.total,
       end_time: fmtClock(parseClock(r.start_time) + (r.total || 0)),
       live: !!live.running, updated_at: r.updated_at, public_enabled: !!r.public_enabled,
@@ -499,7 +578,8 @@ GET('/api/rundowns', need('viewer'), (req) =>
       if (st.running) Object.assign(out, { live_title: st.current.title, live_index: st.index + 1, live_remaining: Math.round(st.remaining), live_progress: Math.round(st.progress * 100), live_delta: Math.round(st.delta) });
     }
     return out;
-  }));
+  });
+});
 
 const DEFAULT_COLUMNS = ['Notizen', 'GFX', 'Ort', 'Ton'];
 
@@ -534,6 +614,7 @@ PATCH('/api/rundowns/:id', needRd('editor'), (req) => {
 
 DELETE('/api/rundowns/:id', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
+  try { backup.create('vor-loeschen', rd.title); } catch (e) { console.error('  Sicherung vor dem Löschen fehlgeschlagen:', e.message); }
   Q.deleteRd.run(rd.id);
   for (const c of clients) if (c.rundownId === rd.id) sse(c, 'deleted', { id: rd.id });
   broadcastLobby();
@@ -915,10 +996,66 @@ GET('/api/companion/:token/:action', companionAction); // GET erlaubt, da manche
 GET('/api/rundowns/:id/cue', needRd('viewer'), (req) => cueInfo(getRundown(req.params.id)));
 GET('/api/rundowns/:id/export', needRd('viewer'), (req) => rundownExport(getRundown(req.params.id)));
 
+// ---------- Backups (nur Admin – Backups enthalten Benutzer, Passwort-Hashes und Tokens)
+GET('/api/backups', need('admin'), () => ({ status: backup.status(), backups: backup.list() }));
+
+PATCH('/api/backups/settings', need('admin'), (req) => ({ settings: backup.saveSettings(req.body), status: backup.status() }));
+
+POST('/api/backups', need('admin'), (req) => {
+  const b = backup.create('manuell', req.body.label);
+  console.log(`[Backup] Manuelles Backup von ${req.user.email}: ${b.name}`);
+  return { backup: b, status: backup.status() };
+});
+
+GET('/api/backups/:name/download', need('admin'), (req, res) => {
+  const file = backup.fileFor(req.params.name);
+  const st = fs.statSync(file);
+  res.writeHead(200, {
+    'Content-Type': 'application/vnd.sqlite3',
+    'Content-Length': st.size,
+    'Content-Disposition': `attachment; filename="${req.params.name}"`,
+    'Cache-Control': 'no-store',
+  });
+  fs.createReadStream(file).pipe(res);
+  return undefined;
+});
+
+DELETE('/api/backups/:name', need('admin'), (req) => { backup.remove(req.params.name); return { ok: true, status: backup.status() }; });
+
+rawRoute('POST', '/api/backups/upload', need('admin'), async (req) => {
+  const buf = await readRaw(req, 500 * 1024 * 1024);
+  if (!buf.length) fail(400, 'Leere Datei');
+  const b = backup.importUpload(buf, String(req.query.name || ''));
+  console.log(`[Backup] Hochgeladen von ${req.user.email}: ${b.name}`);
+  return { backup: b };
+});
+
+POST('/api/backups/:name/restore', need('admin'), (req, res) => {
+  if (req.body.confirm !== true) fail(400, 'Bestätigung fehlt');
+  const { summary, safety } = backup.prepareRestore(req.params.name);
+  console.log(`[Backup] Wiederherstellung von ${req.params.name} durch ${req.user.email} – aktueller Stand gesichert als ${safety.name}. Server startet neu …`);
+  res.on('finish', () => setTimeout(() => shutdown(backup.RESTART_EXIT_CODE), 300));
+  return { ok: true, summary, safety: safety.name, restarting: true };
+});
+
+// ---------- Präsenz
+POST('/api/presence/focus', need('viewer'), (req) => {
+  const c = [...clients].find((x) => x.id === String(req.body.clientId || req.headers['x-client-id'] || ''));
+  if (!c || !c.user || c.user.id !== req.user.id) fail(404, 'Verbindung nicht gefunden');
+  const itemId = Number(req.body.itemId);
+  const f = String(req.body.field || '');
+  const next = itemId && FOCUS_FIELD_RE.test(f) ? { itemId, field: f } : null;
+  if (JSON.stringify(next) !== JSON.stringify(c.focus)) { c.focus = next; broadcastPresence(c.rundownId); }
+  return { ok: true };
+});
+
+GET('/api/presence/:id', needRd('viewer'), (req) => presenceFor(getRundown(req.params.id).id));
+
 // ---------- Echtzeit-Stream
 GET('/api/events', (req, res) => {
   const q = req.query;
-  const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false };
+  const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false,
+    view: ['editor', 'live', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
   if (q.public) {
     const rd = publicRundown(q.public);
     client.rundownId = rd.id;
@@ -941,7 +1078,10 @@ GET('/api/events', (req, res) => {
   res.write(`retry: 2000\n\n`);
   clients.add(client);
   sse(client, 'hello', { clientId: client.id, serverNow: Date.now(), version: VERSION });
-  req.on('close', () => clients.delete(client));
+  if (client.rundownId) sse(client, 'presence', presenceFor(client.rundownId));
+  broadcastPresence(client.rundownId);
+  if (!client.rundownId && client.user) broadcastLobby();
+  req.on('close', () => { clients.delete(client); broadcastPresence(client.rundownId); if (!client.rundownId && client.user) broadcastLobby(); });
   return undefined;
 });
 
@@ -996,7 +1136,7 @@ const server = http.createServer(async (req, res) => {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         if (origin && new URL(origin).host !== host) fail(403, 'Ungültiger Ursprung');
       }
-      req.body = req.method === 'GET' ? {} : await readBody(req);
+      req.body = req.method === 'GET' || r.raw ? {} : await readBody(req);
       let result;
       for (const h of r.handlers) {
         result = await h(req, res);
@@ -1026,10 +1166,16 @@ server.listen(PORT, HOST, () => {
   console.log(`  Lokal:     http://localhost:${PORT}`);
   for (const ip of ips) console.log(`  Netzwerk:  http://${ip}:${PORT}`);
   console.log(`  Daten:     ${DATA_DIR}`);
+  console.log(`  Backups:   ${backup.BACKUP_DIR} (${backup.getSettings().enabled ? `alle ${backup.getSettings().interval_hours} Std., ${backup.getSettings().keep} behalten` : 'automatisch aus'})`);
+  backup.startScheduler();
   if (Q.userCount.get().n === 0) console.log('\n  → Erster Start: Im Browser öffnen und Admin-Konto anlegen.');
   console.log('');
 });
 
-const shutdown = () => { for (const c of clients) c.res.end(); server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(0), 3000).unref(); };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+function shutdown(code = 0) {
+  for (const c of clients) { try { c.res.end(); } catch { /* */ } }
+  server.close(() => { try { db.close(); } catch { /* */ } process.exit(code); });
+  setTimeout(() => process.exit(code), 3000).unref();
+}
+process.on('SIGINT', () => shutdown(0));
+process.on('SIGTERM', () => shutdown(0));
