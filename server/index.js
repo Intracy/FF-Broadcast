@@ -5,8 +5,9 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR } from './db.js';
-import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can } from './auth.js';
+import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can, rank } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
+import * as backup from './backup.js';
 import { liveStatus, fmtDuration, fmtCountdown, fmtTime, fmtClock, parseClock, parseDuration, computeSchedule } from '../shared/timing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,10 +32,48 @@ const route = (method, pattern, ...handlers) => {
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '/?$');
   routes.push({ method, re, keys, handlers });
 };
+const rawRoute = (method, p, ...h) => { route(method, p, ...h); routes[routes.length - 1].raw = true; };
 const GET = (p, ...h) => route('GET', p, ...h);
 const POST = (p, ...h) => route('POST', p, ...h);
 const PATCH = (p, ...h) => route('PATCH', p, ...h);
 const DELETE = (p, ...h) => route('DELETE', p, ...h);
+const PUT = (p, ...h) => route('PUT', p, ...h);
+
+/** Effektive Rolle eines Benutzers für einen Rundown (null = kein Zugriff) */
+const SHARE_ROLES = ['viewer', 'operator', 'editor'];
+function roleFor(user, rid) {
+  if (!user) return null;
+  if (user.role === 'admin') return 'admin';
+  const share = Q.accessGet.get(rid, user.id)?.role || null;
+  if (user.restricted) return share;
+  return share && rank(share) > rank(user.role) ? share : user.role;
+}
+
+/** Rechte auf einen bestimmten Rundown prüfen; ridOf liefert die Rundown-ID aus der Anfrage */
+const needRd = (role, ridOf = (req) => req.params.id) => (req) => {
+  if (!req.user) fail(401, 'Nicht angemeldet');
+  const rid = Number(ridOf(req));
+  const r = rid ? roleFor(req.user, rid) : null;
+  if (!rid || !r || !Q.rdById.get(rid)) fail(404, 'Rundown nicht gefunden');
+  if (rank(r) < rank(role)) fail(403, 'Keine Berechtigung für diese Aktion in diesem Rundown');
+  req.rdRole = r;
+};
+const ridOfItem = (req) => Q.itemById.get(Number(req.params.id))?.rundown_id;
+const ridOfColumn = (req) => Q.colById.get(Number(req.params.id))?.rundown_id;
+const needCreator = (req) => {
+  if (!req.user) fail(401, 'Nicht angemeldet');
+  if (req.user.restricted || !can(req.user, 'editor')) fail(403, 'Keine Berechtigung, Rundowns anzulegen');
+};
+
+/** Benutzer über geänderte Rechte informieren (Ansicht lädt neu; ohne Zugriff wird die Verbindung getrennt) */
+function notifyAccess(userId) {
+  const u = Q.userById.get(userId);
+  for (const c of clients) {
+    if (!c.user || c.user.id !== userId) continue;
+    if (c.rundownId && !roleFor(u, c.rundownId)) { sse(c, 'deleted', { id: c.rundownId, reason: 'access' }); c.res.end(); }
+    else sse(c, 'access', {});
+  }
+}
 
 const need = (role) => (req) => {
   if (!req.user) fail(401, 'Nicht angemeldet');
@@ -49,6 +88,20 @@ function send(res, status, data, headers = {}) {
     ...headers,
   });
   res.end(body);
+}
+
+function readRaw(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) { reject(new HttpError(413, 'Datei zu groß')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 
 function readBody(req, limit = 2 * 1024 * 1024) {
@@ -123,6 +176,8 @@ const userOut = (u) => {
   return {
     id: u.id, email: u.email, name: u.name, role: u.role, created_at: u.created_at, last_login: u.last_login,
     must_change: !!u.must_change,
+    restricted: !!u.restricted && u.role !== 'admin',
+    share_count: Q.accessCount.get(u.id).n,
     pending: String(u.password_hash).startsWith(NO_PASSWORD), // Einladung noch nicht angenommen
     open_link: open ? { purpose: open.purpose, expires_at: open.expires_at } : null,
   };
@@ -294,7 +349,8 @@ function setSession(req, res, u) {
 
 /* ================================================================== API */
 
-GET('/api/health', () => ({ ok: true, version: VERSION }));
+const BOOT_ID = randomToken(6);
+GET('/api/health', () => ({ ok: true, version: VERSION, boot: BOOT_ID }));
 
 // ---------- Auth
 GET('/api/auth/status', (req) => ({ needsSetup: Q.userCount.get().n === 0, user: req.user ? userOut(req.user) : null, version: VERSION }));
@@ -381,6 +437,44 @@ POST('/api/reset/:token', async (req, res) => {
   return { user: userOut(u) };
 });
 
+// ---------- Freigaben pro Rundown (nur Admin)
+function setShare(rid, userId, role) {
+  const u = Q.userById.get(Number(userId));
+  if (!u) fail(404, 'Benutzer nicht gefunden');
+  if (!Q.rdById.get(Number(rid))) fail(404, 'Rundown nicht gefunden');
+  if (role) {
+    if (!SHARE_ROLES.includes(role)) fail(400, 'Ungültige Rolle');
+    Q.accessSet.run(Number(rid), u.id, role);
+  } else Q.accessDel.run(Number(rid), u.id);
+  notifyAccess(u.id);
+}
+
+GET('/api/rundowns/:id/access', need('admin'), (req) => {
+  const rd = getRundown(req.params.id);
+  const shares = new Map(Q.accessByRundown.all(rd.id).map((a) => [a.user_id, a.role]));
+  return Q.users.all().map((u) => ({
+    id: u.id, email: u.email, name: u.name, role: u.role, restricted: !!u.restricted && u.role !== 'admin',
+    share: shares.get(u.id) || null, effective: roleFor(u, rd.id),
+  }));
+});
+
+PUT('/api/rundowns/:id/access/:userId', need('admin'), (req) => {
+  setShare(getRundown(req.params.id).id, req.params.userId, req.body.role || null);
+  return { ok: true };
+});
+
+GET('/api/users/:id/access', need('admin'), (req) => {
+  const u = Q.userById.get(Number(req.params.id));
+  if (!u) fail(404, 'Benutzer nicht gefunden');
+  const shares = new Map(Q.accessByUser.all(u.id).map((a) => [a.rundown_id, a.role]));
+  return Q.rundowns.all().map((r) => ({ id: r.id, title: r.title, event_date: r.event_date, share: shares.get(r.id) || null, effective: roleFor(u, r.id) }));
+});
+
+PUT('/api/users/:id/access/:rundownId', need('admin'), (req) => {
+  setShare(req.params.rundownId, req.params.id, req.body.role || null);
+  return { ok: true };
+});
+
 // ---------- Benutzer (Admin)
 POST('/api/users/:id/reset-link', need('admin'), (req) => {
   const u = Q.userById.get(Number(req.params.id));
@@ -406,18 +500,20 @@ GET('/api/users', need('admin'), () => {
 });
 
 POST('/api/users', need('admin'), async (req) => {
-  const { email, name, password, role, invite, must_change, hours } = req.body;
+  const { email, name, password, role, invite, must_change, hours, restricted } = req.body;
   if (!EMAIL_RE.test(email || '')) fail(400, 'Bitte gültige E-Mail-Adresse angeben');
   if (!ROLES.includes(role)) fail(400, 'Ungültige Rolle');
   if (Q.userByEmail.get(email.trim())) fail(409, 'Diese E-Mail-Adresse existiert bereits');
   if (invite) {
     // Konto ohne Passwort – der Benutzer legt es über den Einladungslink selbst fest
     const { lastInsertRowid } = Q.insertUserFull.run(email.trim(), (name || '').trim(), NO_PASSWORD + randomToken(16), role, 0);
+    if (restricted && role !== 'admin') db.prepare('UPDATE users SET restricted=1 WHERE id=?').run(lastInsertRowid);
     const link = createResetLink(Number(lastInsertRowid), 'invite', hours ?? 168, req.user.email);
     return { ...userOut(Q.userById.get(lastInsertRowid)), link };
   }
   if (String(password || '').length < 8) fail(400, 'Passwort muss mindestens 8 Zeichen haben');
   const { lastInsertRowid } = Q.insertUserFull.run(email.trim(), (name || '').trim(), await hashPassword(password), role, must_change === false ? 0 : 1);
+  if (restricted && role !== 'admin') db.prepare('UPDATE users SET restricted=1 WHERE id=?').run(lastInsertRowid);
   return userOut(Q.userById.get(lastInsertRowid));
 });
 
@@ -444,9 +540,12 @@ PATCH('/api/users/:id', need('admin'), async (req) => {
     upd.must_change = req.body.must_change === false || u.id === req.user.id ? 0 : 1;
     Q.revokeResets.run(u.id);
   }
+  if (req.body.restricted !== undefined) upd.restricted = req.body.restricted ? 1 : 0;
+  if ((upd.role ?? u.role) === 'admin') upd.restricted = 0;
   if (upd.role !== undefined || upd.password_hash) upd.token_version = u.token_version + 1;
-  updateRow('users', u.id, upd, ['email', 'name', 'role', 'password_hash', 'token_version', 'must_change']);
+  updateRow('users', u.id, upd, ['email', 'name', 'role', 'password_hash', 'token_version', 'must_change', 'restricted']);
   if (upd.token_version) kickUser(u.id);
+  else if (upd.restricted !== undefined && upd.restricted !== u.restricted) notifyAccess(u.id);
   return userOut(Q.userById.get(u.id));
 });
 
@@ -461,9 +560,9 @@ DELETE('/api/users/:id', need('admin'), (req) => {
 });
 
 // ---------- Rundowns
-GET('/api/rundowns', need('viewer'), () => {
+GET('/api/rundowns', need('viewer'), (req) => {
   const summary = onlineSummary();
-  return Q.rundowns.all().map((r) => {
+  return Q.rundowns.all().filter((r) => roleFor(req.user, r.id)).map((r) => {
     const live = parseLive(r.live);
     const online = summary.byRundown[r.id] ? [...summary.byRundown[r.id].values()] : [];
     const out = {
@@ -471,6 +570,7 @@ GET('/api/rundowns', need('viewer'), () => {
       id: r.id, title: r.title, event_date: r.event_date, start_time: r.start_time, item_count: r.item_count, total: r.total,
       end_time: fmtClock(parseClock(r.start_time) + (r.total || 0)),
       live: !!live.running, updated_at: r.updated_at, public_enabled: !!r.public_enabled,
+      my_role: roleFor(req.user, r.id),
       block_count: Q.blockCount.get(r.id).n, column_count: Q.colCount.get(r.id).n,
     };
     if (live.running) {
@@ -483,7 +583,7 @@ GET('/api/rundowns', need('viewer'), () => {
 
 const DEFAULT_COLUMNS = ['Notizen', 'GFX', 'Ort', 'Ton'];
 
-POST('/api/rundowns', need('editor'), (req) => {
+POST('/api/rundowns', needCreator, (req) => {
   const { title, event_date, start_time } = req.body;
   if (!String(title || '').trim()) fail(400, 'Bitte einen Titel angeben');
   if (event_date && !DATE_RE.test(event_date)) fail(400, 'Ungültiges Datum');
@@ -498,9 +598,9 @@ POST('/api/rundowns', need('editor'), (req) => {
   return { id };
 });
 
-GET('/api/rundowns/:id', need('viewer'), (req) => payload(getRundown(req.params.id)));
+GET('/api/rundowns/:id', needRd('viewer'), (req) => ({ ...payload(getRundown(req.params.id)), my_role: req.rdRole }));
 
-PATCH('/api/rundowns/:id', need('editor'), (req) => {
+PATCH('/api/rundowns/:id', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   const { title, event_date, start_time } = req.body;
   const upd = {};
@@ -512,15 +612,16 @@ PATCH('/api/rundowns/:id', need('editor'), (req) => {
   return payload(Q.rdById.get(rd.id));
 });
 
-DELETE('/api/rundowns/:id', need('editor'), (req) => {
+DELETE('/api/rundowns/:id', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
+  try { backup.create('vor-loeschen', rd.title); } catch (e) { console.error('  Sicherung vor dem Löschen fehlgeschlagen:', e.message); }
   Q.deleteRd.run(rd.id);
   for (const c of clients) if (c.rundownId === rd.id) sse(c, 'deleted', { id: rd.id });
   broadcastLobby();
   return { ok: true };
 });
 
-POST('/api/rundowns/:id/duplicate', need('editor'), (req) => {
+POST('/api/rundowns/:id/duplicate', needCreator, needRd('viewer'), (req) => {
   const rd = getRundown(req.params.id);
   const id = tx(() => {
     const { lastInsertRowid: rid } = Q.insertRd.run(`${rd.title} (Kopie)`, rd.event_date, rd.start_time, randomToken(), randomToken(24), req.user.id);
@@ -541,7 +642,7 @@ function resequence(rid, ids) {
   ids.forEach((id, pos) => Q.setItemPos.run(pos, id, rid));
 }
 
-POST('/api/rundowns/:id/items', need('editor'), (req) => {
+POST('/api/rundowns/:id/items', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   const { type = 'item', afterId, title, duration, color } = req.body;
   if (!['item', 'block', 'block_end'].includes(type)) fail(400, 'Ungültiger Typ');
@@ -558,7 +659,7 @@ POST('/api/rundowns/:id/items', need('editor'), (req) => {
   return { id: newId, ...payload(Q.rdById.get(rd.id)) };
 });
 
-POST('/api/rundowns/:id/reorder', need('editor'), (req) => {
+POST('/api/rundowns/:id/reorder', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   const current = new Set(Q.itemsByRd.all(rd.id).map((i) => i.id));
   const ids = (req.body.ids || []).map(Number).filter((id) => current.has(id));
@@ -574,7 +675,7 @@ function getItem(id) {
   return it;
 }
 
-PATCH('/api/items/:id', need('editor'), (req) => {
+PATCH('/api/items/:id', needRd('editor', ridOfItem), (req) => {
   const it = getItem(req.params.id);
   const { title, description, duration, color, cells } = req.body;
   const upd = {};
@@ -592,7 +693,7 @@ PATCH('/api/items/:id', need('editor'), (req) => {
   return { ok: true, item: itemOut(Q.itemById.get(it.id)) };
 });
 
-DELETE('/api/items/:id', need('editor'), (req) => {
+DELETE('/api/items/:id', needRd('editor', ridOfItem), (req) => {
   const it = getItem(req.params.id);
   const rd = Q.rdById.get(it.rundown_id);
   const live = parseLive(rd.live);
@@ -607,7 +708,7 @@ DELETE('/api/items/:id', need('editor'), (req) => {
 });
 
 // ---------- Spalten
-POST('/api/rundowns/:id/columns', need('editor'), (req) => {
+POST('/api/rundowns/:id/columns', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   const name = String(req.body.name || '').trim();
   if (!name) fail(400, 'Bitte Spaltennamen angeben');
@@ -617,7 +718,7 @@ POST('/api/rundowns/:id/columns', need('editor'), (req) => {
   return payload(Q.rdById.get(rd.id));
 });
 
-PATCH('/api/columns/:id', need('editor'), (req) => {
+PATCH('/api/columns/:id', needRd('editor', ridOfColumn), (req) => {
   const c = Q.colById.get(Number(req.params.id));
   if (!c) fail(404, 'Spalte nicht gefunden');
   const upd = {};
@@ -628,7 +729,7 @@ PATCH('/api/columns/:id', need('editor'), (req) => {
   return payload(Q.rdById.get(c.rundown_id));
 });
 
-DELETE('/api/columns/:id', need('editor'), (req) => {
+DELETE('/api/columns/:id', needRd('editor', ridOfColumn), (req) => {
   const c = Q.colById.get(Number(req.params.id));
   if (!c) fail(404, 'Spalte nicht gefunden');
   Q.deleteCol.run(c.id);
@@ -636,7 +737,7 @@ DELETE('/api/columns/:id', need('editor'), (req) => {
   return payload(Q.rdById.get(c.rundown_id));
 });
 
-POST('/api/rundowns/:id/columns/reorder', need('editor'), (req) => {
+POST('/api/rundowns/:id/columns/reorder', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   tx(() => (req.body.ids || []).forEach((id, i) => Q.setColPos.run(i, Number(id), rd.id)));
   changed(rd.id, req);
@@ -644,7 +745,7 @@ POST('/api/rundowns/:id/columns/reorder', need('editor'), (req) => {
 });
 
 // ---------- Öffentlicher Link & Companion-Token
-POST('/api/rundowns/:id/public', need('editor'), (req) => {
+POST('/api/rundowns/:id/public', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   const upd = {};
   if (req.body.enabled !== undefined) upd.public_enabled = req.body.enabled ? 1 : 0;
@@ -658,10 +759,10 @@ POST('/api/rundowns/:id/public', need('editor'), (req) => {
 });
 
 const companionInfo = (rd) => ({ token: rd.companion_token, rotated_at: rd.companion_rotated_at, rotated_by: rd.companion_rotated_by });
-GET('/api/rundowns/:id/companion', need('editor'), (req) => companionInfo(getRundown(req.params.id)));
+GET('/api/rundowns/:id/companion', needRd('editor'), (req) => companionInfo(getRundown(req.params.id)));
 
 // Notfall: API-/Companion-Token sofort ungültig machen und neu erzeugen (nur mit ausdrücklicher Bestätigung)
-POST('/api/rundowns/:id/companion/regenerate', need('editor'), (req) => {
+POST('/api/rundowns/:id/companion/regenerate', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   if (req.body.confirm !== true) fail(400, 'Bestätigung fehlt: {"confirm": true} mitsenden');
   updateRow('rundowns', rd.id, {
@@ -682,7 +783,7 @@ function doLive(rid, action, arg) {
   return next;
 }
 
-POST('/api/rundowns/:id/live/:action', need('operator'), (req) => {
+POST('/api/rundowns/:id/live/:action', needRd('operator'), (req) => {
   const rd = getRundown(req.params.id);
   const body = { ...(req.body || {}) };
   const t = readSeconds(body);
@@ -892,8 +993,50 @@ POST('/api/companion/:token/:action', companionAction);
 GET('/api/companion/:token/:action', companionAction); // GET erlaubt, da manche Tools nur GET können
 
 // Gleiche Abfragen für angemeldete Benutzer (Cookie oder Bearer-Token)
-GET('/api/rundowns/:id/cue', need('viewer'), (req) => cueInfo(getRundown(req.params.id)));
-GET('/api/rundowns/:id/export', need('viewer'), (req) => rundownExport(getRundown(req.params.id)));
+GET('/api/rundowns/:id/cue', needRd('viewer'), (req) => cueInfo(getRundown(req.params.id)));
+GET('/api/rundowns/:id/export', needRd('viewer'), (req) => rundownExport(getRundown(req.params.id)));
+
+// ---------- Backups (nur Admin – Backups enthalten Benutzer, Passwort-Hashes und Tokens)
+GET('/api/backups', need('admin'), () => ({ status: backup.status(), backups: backup.list() }));
+
+PATCH('/api/backups/settings', need('admin'), (req) => ({ settings: backup.saveSettings(req.body), status: backup.status() }));
+
+POST('/api/backups', need('admin'), (req) => {
+  const b = backup.create('manuell', req.body.label);
+  console.log(`[Backup] Manuelles Backup von ${req.user.email}: ${b.name}`);
+  return { backup: b, status: backup.status() };
+});
+
+GET('/api/backups/:name/download', need('admin'), (req, res) => {
+  const file = backup.fileFor(req.params.name);
+  const st = fs.statSync(file);
+  res.writeHead(200, {
+    'Content-Type': 'application/vnd.sqlite3',
+    'Content-Length': st.size,
+    'Content-Disposition': `attachment; filename="${req.params.name}"`,
+    'Cache-Control': 'no-store',
+  });
+  fs.createReadStream(file).pipe(res);
+  return undefined;
+});
+
+DELETE('/api/backups/:name', need('admin'), (req) => { backup.remove(req.params.name); return { ok: true, status: backup.status() }; });
+
+rawRoute('POST', '/api/backups/upload', need('admin'), async (req) => {
+  const buf = await readRaw(req, 500 * 1024 * 1024);
+  if (!buf.length) fail(400, 'Leere Datei');
+  const b = backup.importUpload(buf, String(req.query.name || ''));
+  console.log(`[Backup] Hochgeladen von ${req.user.email}: ${b.name}`);
+  return { backup: b };
+});
+
+POST('/api/backups/:name/restore', need('admin'), (req, res) => {
+  if (req.body.confirm !== true) fail(400, 'Bestätigung fehlt');
+  const { summary, safety } = backup.prepareRestore(req.params.name);
+  console.log(`[Backup] Wiederherstellung von ${req.params.name} durch ${req.user.email} – aktueller Stand gesichert als ${safety.name}. Server startet neu …`);
+  res.on('finish', () => setTimeout(() => shutdown(backup.RESTART_EXIT_CODE), 300));
+  return { ok: true, summary, safety: safety.name, restarting: true };
+});
 
 // ---------- Präsenz
 POST('/api/presence/focus', need('viewer'), (req) => {
@@ -906,7 +1049,7 @@ POST('/api/presence/focus', need('viewer'), (req) => {
   return { ok: true };
 });
 
-GET('/api/presence/:id', need('viewer'), (req) => presenceFor(getRundown(req.params.id).id));
+GET('/api/presence/:id', needRd('viewer'), (req) => presenceFor(getRundown(req.params.id).id));
 
 // ---------- Echtzeit-Stream
 GET('/api/events', (req, res) => {
@@ -919,7 +1062,11 @@ GET('/api/events', (req, res) => {
     client.isPublic = true;
   } else {
     if (!req.user) fail(401, 'Nicht angemeldet');
-    if (q.rundown) client.rundownId = getRundown(q.rundown).id;
+    if (q.rundown) {
+      const rd = getRundown(q.rundown);
+      if (!roleFor(req.user, rd.id)) fail(404, 'Rundown nicht gefunden');
+      client.rundownId = rd.id;
+    }
     else client.lobby = true;
   }
   res.writeHead(200, {
@@ -991,7 +1138,7 @@ const server = http.createServer(async (req, res) => {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         if (origin && new URL(origin).host !== host) fail(403, 'Ungültiger Ursprung');
       }
-      req.body = req.method === 'GET' ? {} : await readBody(req);
+      req.body = req.method === 'GET' || r.raw ? {} : await readBody(req);
       let result;
       for (const h of r.handlers) {
         result = await h(req, res);
@@ -1021,10 +1168,16 @@ server.listen(PORT, HOST, () => {
   console.log(`  Lokal:     http://localhost:${PORT}`);
   for (const ip of ips) console.log(`  Netzwerk:  http://${ip}:${PORT}`);
   console.log(`  Daten:     ${DATA_DIR}`);
+  console.log(`  Backups:   ${backup.BACKUP_DIR} (${backup.getSettings().enabled ? `alle ${backup.getSettings().interval_hours} Std., ${backup.getSettings().keep} behalten` : 'automatisch aus'})`);
+  backup.startScheduler();
   if (Q.userCount.get().n === 0) console.log('\n  → Erster Start: Im Browser öffnen und Admin-Konto anlegen.');
   console.log('');
 });
 
-const shutdown = () => { for (const c of clients) c.res.end(); server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(0), 3000).unref(); };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+function shutdown(code = 0) {
+  for (const c of clients) { try { c.res.end(); } catch { /* */ } }
+  server.close(() => { try { db.close(); } catch { /* */ } process.exit(code); });
+  setTimeout(() => process.exit(code), 3000).unref();
+}
+process.on('SIGINT', () => shutdown(0));
+process.on('SIGTERM', () => shutdown(0));

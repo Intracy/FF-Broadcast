@@ -15,5 +15,11 @@ if errorlevel 1 (
 )
 if "%PORT%"=="" set PORT=3000
 echo Starte FF Rundown auf Port %PORT% ...
+rem Exit-Code 75 = Neustart angefordert (z. B. nach Wiederherstellung eines Backups)
+:run
 node --no-warnings server\index.js
+if %ERRORLEVEL%==75 (
+  echo Neustart ...
+  goto run
+)
 pause

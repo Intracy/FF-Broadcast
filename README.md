@@ -29,6 +29,8 @@ Selbst gehostete Rundown-App für Live-Produktionen und Events. Läuft auf NAS (
 | **Operator** | ansehen + Live-Steuerung |
 | **Viewer** | nur ansehen |
 
+**Externe Benutzer (z. B. Dienstleister):** Beim Anlegen „Nur freigegebene (extern)“ wählen. Sie sehen dann ausschließlich Rundowns, die ein Admin ihnen freigibt – mit einer Rolle pro Rundown (Viewer, Operator oder Editor). Freigaben verwaltest du im Rundown unter **Freigaben** oder in der Benutzerliste über das Schloss-Symbol. Interne Benutzer können in einzelnen Rundowns zusätzlich eine höhere Rolle bekommen (z. B. Viewer allgemein, aber Editor für „Finale“). Externe können keine neuen Rundowns anlegen; alles wird serverseitig geprüft – auch für API und Live-Ansicht.
+
 Beim ersten Aufruf legst du im Browser das erste Admin-Konto an.
 
 ---
@@ -222,6 +224,7 @@ Dieselben Daten gibt es für angemeldete Benutzer (Cookie oder `Authorization: B
 | `COOKIE_SECURE` | automatisch | `true`/`false` erzwingen |
 | `SESSION_SECRET` | auto-generiert | eigener Schlüssel für Sitzungen |
 | `TZ` | System | Zeitzone (für Companion-Uhrzeiten) |
+| `BACKUP_DIR` | `data/backups` | Speicherort der Backups (siehe „Backups“) |
 
 ## Update auf eine neue Version
 
@@ -251,9 +254,27 @@ Alles liegt im Ordner `data/`:
 - Den `data`-Ordner nicht als Netzwerkfreigabe freigeben; Backups wie Passwort-Listen behandeln (verschlüsselt aufbewahren).
 - Falls Datei oder Backup abhandenkommen: API-Tokens und öffentliche Links neu erzeugen und `secret.key` löschen (alle werden abgemeldet, beim Start entsteht ein neuer Schlüssel).
 
-## Backup
+## Backups
 
-Den Ordner `data` sichern (bei laufendem Server am besten `rundown.db`, `rundown.db-wal` und `rundown.db-shm` zusammen, oder Server kurz stoppen). Wiederherstellen = Ordner zurückkopieren.
+Unter **System** (nur Admins) laufen automatische Sicherungen der kompletten Datenbank:
+
+- **Automatisch** im eingestellten Intervall (Standard: alle 6 Std., die letzten 30 werden behalten) – konsistent auch im laufenden Betrieb.
+- **Jetzt sichern** mit optionaler Bezeichnung (z. B. „vor dem Finale“); manuelle Backups werden nie automatisch gelöscht.
+- **Vor dem Löschen eines Rundowns** und **vor jeder Wiederherstellung** wird automatisch gesichert.
+- **Herunterladen**, **hochladen** (wird vorher geprüft) und **wiederherstellen**. Beim Wiederherstellen startet der Server neu; als Dienst (systemd, Docker, macOS-Autostart) und mit den Startskripten passiert das automatisch.
+
+Ablage: `data/backups/` (nur für den Server lesbar). Besser zusätzlich auf einem anderen Datenträger:
+
+| Variable | Bedeutung |
+|---|---|
+| `BACKUP_DIR` | anderer Speicherort, z. B. `/mnt/usb/ff-backups` oder eine NAS-Freigabe |
+| `BACKUP_INTERVAL_HOURS` | Intervall fest vorgeben (1, 3, 6, 12, 24, 48, 168) |
+| `BACKUP_KEEP` | Anzahl automatischer Backups (7, 14, 30, 60, 100) |
+| `BACKUP_ENABLED` | `false` schaltet die automatischen Backups ab |
+
+Per Variable gesetzte Werte sind in der Oberfläche gesperrt. Backups enthalten Benutzer, Passwort-Hashes und Tokens – heruntergeladene Dateien sicher aufbewahren.
+
+Manuell geht es weiterhin: Server stoppen und den Ordner `data` kopieren.
 
 ## Passwort vergessen / Zugang zurücksetzen
 
