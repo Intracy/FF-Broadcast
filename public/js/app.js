@@ -88,11 +88,13 @@ function setTheme(t) {
 const theme = () => document.documentElement.dataset.theme || 'dark';
 function loadPrefs(rid) {
   try { S.hidden = new Set(JSON.parse(localStorage.getItem('ffr.hidden.' + rid) || '[]')); } catch { S.hidden = new Set(); }
+  try { S.collapsed = new Set(JSON.parse(localStorage.getItem('ffr.collapsed.' + rid) || '[]')); } catch { S.collapsed = new Set(); }
   try { S.prefs = JSON.parse(localStorage.getItem('ffr.prefs') || '{}'); } catch { S.prefs = {}; }
   S.step = S.prefs.step || 60;
 }
 function savePrefs() {
   if (S.rd) localStorage.setItem('ffr.hidden.' + S.rd.rundown.id, JSON.stringify([...S.hidden]));
+  if (S.rd) localStorage.setItem('ffr.collapsed.' + S.rd.rundown.id, JSON.stringify([...(S.collapsed || [])]));
   localStorage.setItem('ffr.prefs', JSON.stringify({ ...S.prefs, step: S.step }));
 }
 
@@ -1211,10 +1213,11 @@ function buildRow(it) {
   let row;
   if (it.type === 'block') {
     row = h('div', { class: 'row block-row' }, grip,
-      h('div', { class: 'c block-cell', style: span },
+      h('div', { class: 'c block-cell', style: span, title: 'Klicken zum Ein- oder Ausklappen', onclick: (e) => { if (!e.target.closest('input, textarea, .block-toggle')) toggleBlock(it.id); } },
         h('span', { class: 'block-tag' }, 'Block'),
         ed ? h('input', { 'data-f': 'title', placeholder: 'Blockname', spellcheck: 'false' }) : h('div', { class: 'ro-text', 'data-f': 'title' }),
-        h('span', { class: 'bmeta', 'data-r': 'bmeta' })),
+        h('span', { class: 'bmeta', 'data-r': 'bmeta' }),
+        h('button', { class: 'icon-btn block-toggle', type: 'button', 'aria-expanded': 'true', onclick: (e) => { e.stopPropagation(); toggleBlock(it.id); } }, icon('chevronDown'))),
       actionsCell(it));
   } else if (it.type === 'block_end') {
     row = h('div', { class: 'row block-end-row' }, grip,
@@ -1242,6 +1245,38 @@ function buildRow(it) {
   row.dataset.id = it.id;
   row.dataset.type = it.type;
   return row;
+}
+
+/* ---------- Blöcke ein- und ausklappen (pro Browser gemerkt) */
+const isCollapsed = (blockId) => !!S.collapsed?.has(blockId);
+/** Blockname nur so breit wie nötig – der Rest der Blockzeile bleibt zum Klicken frei */
+function fitBlockTitle(input) {
+  if (input) input.size = Math.max(10, (input.value || input.placeholder || '').length + 2);
+}
+
+function paintBlockToggle(row, collapsed) {
+  row.classList.toggle('collapsed', collapsed);
+  const btn = row.querySelector('.block-toggle');
+  if (!btn || btn.dataset.state === String(collapsed)) return;
+  btn.dataset.state = String(collapsed);
+  btn.replaceChildren(icon(collapsed ? 'chevronUp' : 'chevronDown'));
+  btn.setAttribute('aria-expanded', String(!collapsed));
+  btn.title = collapsed ? 'Block ausklappen' : 'Block einklappen';
+  btn.setAttribute('aria-label', btn.title);
+}
+
+function toggleBlock(id, force) {
+  S.collapsed ||= new Set();
+  const collapse = force ?? !S.collapsed.has(id);
+  if (collapse) S.collapsed.add(id); else S.collapsed.delete(id);
+  savePrefs();
+  renderRows();
+}
+
+function setAllBlocks(collapse) {
+  S.collapsed = new Set(collapse ? S.rd.items.filter((i) => i.type === 'block').map((i) => i.id) : []);
+  savePrefs();
+  renderRows();
 }
 
 /** Skript-Editor eines Programmpunkts auf- bzw. zuklappen */
@@ -1290,6 +1325,7 @@ function fillRow(row, it, sched) {
   row.classList.toggle('has-color', !!it.color);
   const blockColor = it.type === 'block' ? null : s.block ? (s.block.color || 'var(--border-2)') : null;
   if (blockColor) row.style.setProperty('--block', blockColor); else row.style.removeProperty('--block');
+  row.classList.toggle('in-collapsed', it.type !== 'block' && !!s.block && isCollapsed(s.block.id));
   const active = document.activeElement;
   for (const el of row.querySelectorAll('[data-f]')) {
     if (el === active) continue;
@@ -1306,6 +1342,8 @@ function fillRow(row, it, sched) {
     set('end', fmtClock(s.end));
   } else if (it.type === 'block') {
     set('bmeta', `${s.count || 0} ${s.count === 1 ? 'Punkt' : 'Punkte'} · ${fmtDuration(s.duration || 0, { hours: (s.duration || 0) >= 3600 })} · ${fmtClock(s.start)}–${fmtClock(s.end)}`);
+    paintBlockToggle(row, isCollapsed(it.id));
+    fitBlockTitle(row.querySelector('.block-cell input'));
   } else {
     set('bename', 'Ende ' + (s.block?.title || 'Block'));
   }
@@ -1351,7 +1389,7 @@ function initRowEvents() {
     markEmpty(el, el.value);
     if (f === 'script') el.closest('.item-row')?.querySelector('.script-btn')?.classList.toggle('has', !!el.value);
     queueSave(id, f, el.value);
-    if (it.type === 'block' && f === 'title') rerenderSoon();
+    if (it.type === 'block' && f === 'title') { fitBlockTitle(el); rerenderSoon(); }
   });
   rows.addEventListener('change', (e) => {
     const el = e.target;
@@ -1392,6 +1430,8 @@ async function addItem(type, afterId = S.focusId) {
   try {
     flushSaves();
     const p = await api('POST', `/api/rundowns/${S.rd.rundown.id}/items`, { type, afterId });
+    const parent = computeSchedule(p.items, 0).map.get(p.id)?.block;
+    if (parent && isCollapsed(parent.id)) { S.collapsed.delete(parent.id); savePrefs(); }
     applyPayload(p);
     const row = R.rows.querySelector(`[data-id="${p.id}"]`);
     if (row) {
@@ -1717,6 +1757,9 @@ function viewMenu(anchor) {
     { label: 'Mitlaufen (aktueller Punkt oben)', icon: followOn() ? 'check' : 'follow', active: followOn(), onClick: toggleFollow },
     { label: 'Erledigte Punkte ausblenden', icon: S.prefs.hideDone ? 'check' : 'eyeOff', active: S.prefs.hideDone, onClick: () => { S.prefs.hideDone = !S.prefs.hideDone; savePrefs(); applyPageClasses(); } },
     { label: 'Spalten ein-/ausblenden …', icon: 'columns', onClick: columnsModal },
+    ...(S.rd.items.some((i) => i.type === 'block') ? [
+      { label: 'Alle Blöcke einklappen', icon: 'chevronUp', onClick: () => setAllBlocks(true) },
+      { label: 'Alle Blöcke ausklappen', icon: 'chevronDown', onClick: () => setAllBlocks(false) }] : []),
     { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
   menu(anchor, items);
 }

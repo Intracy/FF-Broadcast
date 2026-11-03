@@ -8,7 +8,7 @@ Selbst gehostete Rundown-App für Live-Produktionen und Events. Läuft auf NAS (
 
 - **Mehrere Rundowns** mit Titel, Datum und Startzeit; Übersicht als **Kacheln oder Liste**, gruppiert nach Live / Heute / Kommend / Vergangen, mit Suche, Filter und Sortierung; duplizieren und löschen
 - **Programmpunkte** mit Titel, Beschreibung, Dauer – Start-/Endzeiten werden automatisch berechnet
-- **Blöcke & Block-Ende** zum Gruppieren (mit Summe aus Anzahl, Dauer und Zeitfenster)
+- **Blöcke & Block-Ende** zum Gruppieren (mit Summe aus Anzahl, Dauer und Zeitfenster); **ein- und ausklappbar** per Klick auf den Block oder den Pfeil rechts (zeigt nach unten = ausgeklappt, nach oben = eingeklappt), alle auf einmal über „Ansicht“. Der Zustand wird pro Browser gemerkt; der laufende Punkt bleibt auch im eingeklappten Block sichtbar
 - **Farben** pro Punkt/Block (Palette oder eigene Farbe)
 - **Drag & Drop** zum Umsortieren (Maus und Touch)
 - **Eigene Spalten** (Notizen, GFX, Ort, Ton, Kamera …): anlegen, umbenennen, sortieren, löschen; **ein-/ausblenden** pro Benutzer; pro Spalte festlegen, ob sie im öffentlichen Link erscheint
