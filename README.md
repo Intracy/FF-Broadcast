@@ -291,5 +291,5 @@ MIT – siehe [LICENSE](LICENSE).
 
 ## Hinweise
 
-- Schriften (IBM Plex Sans, Barlow Condensed) werden von Google Fonts geladen. Ohne Internet nutzt die App automatisch Systemschriften – alles funktioniert weiter.
+- Alle Schriften (IBM Plex Sans, IBM Plex Mono, Barlow Condensed) sind in der App enthalten (`public/fonts/`, SIL Open Font License). Es werden keine externen Dienste wie Google Fonts kontaktiert – die App läuft komplett offline und DSGVO-freundlich.
 - Die App als „App“ installieren: im Browser „Zum Startbildschirm hinzufügen“ (iOS/Android) bzw. „Installieren“ (Chrome/Edge). Dafür ist HTTPS nötig.
