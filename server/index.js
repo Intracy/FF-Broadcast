@@ -1055,7 +1055,7 @@ GET('/api/presence/:id', needRd('viewer'), (req) => presenceFor(getRundown(req.p
 GET('/api/events', (req, res) => {
   const q = req.query;
   const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false,
-    view: ['editor', 'live', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
+    view: ['editor', 'live', 'timer', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
   if (q.public) {
     const rd = publicRundown(q.public);
     client.rundownId = rd.id;
@@ -1090,6 +1090,8 @@ const MUST_CHANGE_ALLOWED = ['/api/auth/status', '/api/auth/logout', '/api/auth/
 
 const PAGES = [
   [/^\/p\/[^/]+\/?$/, 'index.html'],
+  [/^\/timer\/p\/[^/]+\/?$/, 'timer.html'],
+  [/^\/timer\/\d+\/?$/, 'timer.html'],
   [/^\/live\/p\/[^/]+\/?$/, 'live.html'],
   [/^\/live\/\d+\/?$/, 'live.html'],
 ];

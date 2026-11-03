@@ -507,7 +507,7 @@ function relTime(sqlDate) {
 
 const PRESENCE_COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#a3e635'];
 const userColor = (id) => PRESENCE_COLORS[Math.abs(Number(id) || 0) % PRESENCE_COLORS.length];
-const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
+const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', timer: 'im Timer', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
 
 /** Kleiner Avatar-Stapel für eine Liste von Personen */
 function avatarStack(people, { max = 4, size = 'xs', title = '' } = {}) {
@@ -1061,6 +1061,7 @@ function buildRundownPage() {
   R.end = h('span');
 
   const headActions = h('div', { class: 'rd-head-actions' },
+    h('button', { class: 'btn', title: 'Timer in neuem Fenster öffnen', onclick: () => window.open(S.publicToken ? `/timer/p/${encodeURIComponent(S.publicToken)}` : `/timer/${rd.id}`, '_blank') }, icon('timer'), h('span', { class: 'lbl' }, 'Timer')),
     h('button', { class: 'btn', onclick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${rd.id}`, '_blank') }, icon('external'), h('span', { class: 'lbl' }, 'Live-Ansicht')),
     h('button', { class: 'btn', onclick: (e) => viewMenu(e.currentTarget) }, icon('eye'), h('span', { class: 'lbl' }, 'Ansicht')),
     !S.publicToken ? h('button', { class: 'btn', onclick: publicLinkModal }, icon('share'), h('span', { class: 'lbl' }, 'Öffentlicher Link')) : null,
