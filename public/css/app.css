@@ -1252,3 +1252,38 @@ h1, .h1 { letter-spacing: .015em; }
 .avatar.is-online::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2.5px var(--bg-2); }
 .u-last.is-online .online-txt { display: inline-flex; align-items: center; gap: 7px; color: var(--green-text); font-weight: 600; }
 .u-last.is-online .on-dot { margin-top: 0; animation: pulse 2s infinite; }
+
+/* =====================================================================
+   Skript für den Prompter (Button im Programmpunkt + aufklappbarer Editor)
+   ===================================================================== */
+.item-row > .cell.title { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-content: start; }
+.item-row > .cell.title > .t1 { grid-column: 1; grid-row: 1; }
+.item-row > .cell.title > .t2 { grid-column: 1; grid-row: 2; }
+.script-btn { grid-column: 2; grid-row: 1; align-self: start; position: relative; width: 30px !important; height: 30px !important; margin: -6px -8px 0 0; border-radius: 8px; color: color-mix(in srgb, currentColor 55%, transparent); }
+.has-color .script-btn { color: rgba(255, 255, 255, .7); }
+.script-btn .ico { width: 17px !important; height: 17px !important; }
+.script-btn:hover { background: rgba(255, 255, 255, .1); color: inherit; }
+.script-btn.has { color: inherit; }
+.script-btn.has::after { content: ''; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 2px var(--c, var(--cell)); }
+.script-btn.on { background: rgba(255, 255, 255, .14); color: inherit; }
+:root[data-theme='light'] .item-row:not(.has-color) .script-btn:hover, :root[data-theme='light'] .item-row:not(.has-color) .script-btn.on { background: rgba(0, 0, 0, .07); }
+
+.script-edit { display: none; }
+.item-row.script-open > .script-edit { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 6px; max-width: 900px; animation: script-in .15s ease-out; }
+@keyframes script-in { from { opacity: 0; transform: translateY(-4px); } }
+.script-label { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-cond); font-weight: 700; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.script-label .ico { width: 14px; height: 14px; }
+.script-in { display: block; width: 100%; min-height: 90px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border-2); background: var(--cell); color: var(--cell-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea.script-in { overflow: hidden; }
+.script-in:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.ro-text.script-in:empty::before { content: attr(data-empty); color: var(--muted); font-style: italic; }
+.compact .script-in { font-size: 14px; min-height: 70px; padding: 8px 10px; }
+
+@media (max-width: 900px) {
+  .item-row > .script-edit { grid-column: 2 / -1 !important; order: 1; }
+  .item-row > .row-actions { order: 2; }
+  .item-row.script-open > .script-edit { padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .1); }
+  .item-row .script-in { background: rgba(0, 0, 0, .18); border-color: rgba(255, 255, 255, .14); color: inherit; font-size: 15px; }
+  :root[data-theme='light'] .item-row:not(.has-color) .script-in { background: var(--surface); border-color: var(--border-2); }
+  .item-row > .cell.title .script-btn { margin: -4px -4px 0 0; }
+}

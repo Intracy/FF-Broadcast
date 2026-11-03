@@ -14,9 +14,9 @@ const DEFAULTS = { speed: 40, size: 56, margin: 6, indicator: 30, mirror: false,
 if (window.innerWidth < 600) DEFAULTS.size = 36;
 const P = (() => { try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('ffr.prompter') || '{}') }; } catch { return { ...DEFAULTS }; } })();
 const saveP = () => { try { localStorage.setItem('ffr.prompter', JSON.stringify(P)); } catch { /* */ } };
-// Textquelle pro Rundown: 'description' oder 'c<Spalten-ID>'
+// Textquelle pro Rundown: 'script' (Skript des Programmpunkts), 'description' oder 'c<Spalten-ID>'
 const srcKey = () => 'ffr.prompter.src.' + data.rundown.id;
-const getSource = () => { try { return localStorage.getItem(srcKey()) || 'description'; } catch { return 'description'; } };
+const getSource = () => { try { return localStorage.getItem(srcKey()) || 'script'; } catch { return 'script'; } };
 const setSource = (v) => { try { localStorage.setItem(srcKey(), v); } catch { /* */ } };
 
 let playing = false;
@@ -128,6 +128,7 @@ function optionsMenu(anchor) {
   popover(anchor, h('div', { class: 'pr-opts' },
     h('label', { class: 'field' }, h('span', null, 'Text aus'),
       h('select', { class: 'input', onchange: (e) => { setSource(e.target.value); renderText(); } },
+        h('option', { value: 'script', selected: src === 'script' }, 'Skript der Programmpunkte'),
         h('option', { value: 'description', selected: src === 'description' }, 'Beschreibung der Programmpunkte'),
         data.columns.map((c) => h('option', { value: 'c' + c.id, selected: src === 'c' + c.id }, `Spalte „${c.name}“`)))),
     range('Rand', 'margin', 0, 30, 2, '%'),
@@ -143,6 +144,7 @@ function optionsMenu(anchor) {
 /* ---------- Text */
 function textOf(it) {
   const src = getSource();
+  if (src === 'script') return it.script || '';
   if (src === 'description') return it.description || '';
   return it.cells?.[src.slice(1)] || '';
 }
@@ -151,7 +153,7 @@ function renderText() {
   if (!data) return;
   // Gewählte Spalte existiert nicht mehr → zurück auf Beschreibung
   const src = getSource();
-  if (src !== 'description' && !data.columns.some((c) => 'c' + c.id === src)) setSource('description');
+  if (src.startsWith('c') && !data.columns.some((c) => 'c' + c.id === src)) setSource('script');
 
   const sched = computeSchedule(data.items, parseClock(data.rundown.start_time));
   const out = [];
@@ -161,7 +163,7 @@ function renderText() {
     const text = textOf(it).trim();
     out.push(h('section', { class: 'pr-sec', dataset: { id: it.id } },
       h('div', { class: 'pr-head' }, h('span', { class: 'nr' }, String(sched.map.get(it.id)?.nr ?? '')), h('span', null, it.title || 'Ohne Titel')),
-      text ? text.split(/\n{2,}/).map((para) => h('p', null, para)) : h('p', { class: 'pr-empty' }, 'Kein Text')));
+      text ? text.split(/\n{2,}/).map((para) => h('p', null, para)) : h('p', { class: 'pr-empty' }, getSource() === 'script' ? 'Kein Skript' : 'Kein Text')));
   }
   if (!out.length) out.push(h('p', { class: 'pr-empty' }, 'Noch keine Programmpunkte.'));
   el.items.replaceChildren(...out);

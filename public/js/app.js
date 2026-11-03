@@ -1227,13 +1227,43 @@ function buildRow(it) {
         ed ? h('input', { class: 'dur-in', 'data-f': 'duration', autocomplete: 'off', 'aria-label': 'Dauer', title: 'Dauer: mm:ss, h:mm:ss oder Minuten (z. B. 5)' }) : h('span', { class: 'dur-ro', 'data-f': 'duration' }),
         h('div', { class: 'delta', 'data-r': 'delta' })),
       showB('end') ? h('div', { class: 'c cell center c-end', 'data-label': 'Ende' }, h('span', { class: 'big', 'data-r': 'end' })) : null,
-      h('div', { class: 'c cell title' }, field('t1', 'title', 'Titel'), field('t2', 'description', 'Beschreibung …'), h('div', { class: 'row-prog' }, h('span'))),
+      h('div', { class: 'c cell title' }, field('t1', 'title', 'Titel'), field('t2', 'description', 'Beschreibung …'),
+        h('button', { class: 'icon-btn script-btn', type: 'button', title: 'Skript / Prompter-Text', 'aria-label': 'Skript ein- oder ausblenden', 'aria-expanded': 'false', onclick: () => toggleScript(it.id) }, icon('script')),
+        h('div', { class: 'row-prog' }, h('span'))),
       visCols().map((c) => h('div', { class: 'c cell txt', 'data-label': c.name }, field('', 'cell:' + c.id, c.name))),
-      actionsCell(it, { play: true }));
+      actionsCell(it, { play: true }),
+      h('div', { class: 'c script-edit', style: { gridColumn: `${4 + (showB('start') ? 1 : 0) + (showB('end') ? 1 : 0)} / ${hasActions() ? -2 : -1}` } },
+        h('label', { class: 'script-label' }, icon('script'), 'Skript für den Prompter'),
+        canEdit()
+          ? h('textarea', { class: 'script-in', 'data-f': 'script', rows: 3, placeholder: 'Moderationstext, Fragen, Einsätze …', 'aria-label': 'Skript für den Prompter' })
+          : h('div', { class: 'ro-text script-in', 'data-f': 'script', 'data-empty': 'Kein Skript' })));
   }
   row.dataset.id = it.id;
   row.dataset.type = it.type;
   return row;
+}
+
+/** Skript-Editor eines Programmpunkts auf- bzw. zuklappen */
+function toggleScript(id) {
+  S.openScripts ||= new Set();
+  const open = !S.openScripts.has(id);
+  if (open) S.openScripts.add(id); else S.openScripts.delete(id);
+  const row = R.rows.querySelector(`.item-row[data-id="${id}"]`);
+  if (!row) return;
+  paintScript(row, item(id));
+  if (open) {
+    const ta = row.querySelector('.script-edit textarea');
+    if (ta) requestAnimationFrame(() => { autosize(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+  }
+}
+function paintScript(row, it) {
+  const open = !!S.openScripts?.has(it.id);
+  row.classList.toggle('script-open', open);
+  const btn = row.querySelector('.script-btn');
+  if (!btn) return;
+  btn.classList.toggle('on', open);
+  btn.classList.toggle('has', !!it.script);
+  btn.setAttribute('aria-expanded', String(open));
 }
 
 function valueOf(it, f) {
@@ -1269,6 +1299,7 @@ function fillRow(row, it, sched) {
   }
   const set = (r, v) => { const el = row.querySelector(`[data-r="${r}"]`); if (el && el.textContent !== v) el.textContent = v; };
   if (it.type === 'item') {
+    paintScript(row, it);
     set('nr', String(s.nr ?? ''));
     set('start', fmtClock(s.start));
     set('end', fmtClock(s.end));
@@ -1317,6 +1348,7 @@ function initRowEvents() {
     if (!it) return;
     setVal(it, f, el.value);
     markEmpty(el, el.value);
+    if (f === 'script') el.closest('.item-row')?.querySelector('.script-btn')?.classList.toggle('has', !!el.value);
     queueSave(id, f, el.value);
     if (it.type === 'block' && f === 'title') rerenderSoon();
   });
@@ -1520,7 +1552,7 @@ function reportFocus(itemId, field) {
 
 function presenceMenu(anchor) {
   const p = S.presence || { users: [], viewers: 0 };
-  const fieldName = (f) => f === 'title' ? 'Titel' : f === 'description' ? 'Beschreibung' : f === 'duration' ? 'Dauer'
+  const fieldName = (f) => f === 'title' ? 'Titel' : f === 'description' ? 'Beschreibung' : f === 'script' ? 'Skript' : f === 'duration' ? 'Dauer'
     : (S.rd.columns.find((c) => 'cell:' + c.id === f)?.name || 'Spalte');
   const itemName = (id) => { const it = S.rd.items.find((i) => i.id === id); const nr = S.sched?.map.get(id)?.nr; return it ? `${nr ? nr + '. ' : ''}${it.title || (it.type === 'block' ? 'Block' : 'Ohne Titel')}` : ''; };
   popover(anchor, [
