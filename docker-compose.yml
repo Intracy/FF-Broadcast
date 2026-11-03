@@ -1,0 +1,20 @@
+services:
+  rundown:
+    build: .
+    image: ff-rundown:latest
+    container_name: ff-rundown
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - TZ=Europe/Berlin
+      # Hinter einem Reverse-Proxy mit HTTPS (Internetzugriff) auf true setzen:
+      - TRUST_PROXY=false
+    volumes:
+      - ./data:/data
+      # Programmdateien direkt aus diesem Ordner verwenden:
+      # Update = Dateien ersetzen + "docker compose restart" (kein Neu-Bauen nötig)
+      - ./server:/app/server:ro
+      - ./shared:/app/shared:ro
+      - ./public:/app/public:ro
+      - ./package.json:/app/package.json:ro

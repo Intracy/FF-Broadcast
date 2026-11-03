@@ -1,0 +1,20 @@
+{
+  "name": "ff-rundown",
+  "version": "1.10.0",
+  "description": "Selbst gehostete Rundown-App für Live-Produktionen (Frankenfinals)",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "node --no-warnings --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Intracy/FF-Broadcast.git"
+  },
+  "homepage": "https://github.com/Intracy/FF-Broadcast"
+}
