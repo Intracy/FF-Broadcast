@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR } from './db.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
+import * as backup from './backup.js';
 import { liveStatus, fmtDuration, fmtCountdown, fmtTime, fmtClock, parseClock, parseDuration, computeSchedule } from '../shared/timing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,7 @@ const route = (method, pattern, ...handlers) => {
   const re = new RegExp('^' + pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; }) + '/?$');
   routes.push({ method, re, keys, handlers });
 };
+const rawRoute = (method, p, ...h) => { route(method, p, ...h); routes[routes.length - 1].raw = true; };
 const GET = (p, ...h) => route('GET', p, ...h);
 const POST = (p, ...h) => route('POST', p, ...h);
 const PATCH = (p, ...h) => route('PATCH', p, ...h);
@@ -49,6 +51,20 @@ function send(res, status, data, headers = {}) {
     ...headers,
   });
   res.end(body);
+}
+
+function readRaw(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) { reject(new HttpError(413, 'Datei zu groß')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 
 function readBody(req, limit = 2 * 1024 * 1024) {
@@ -294,7 +310,8 @@ function setSession(req, res, u) {
 
 /* ================================================================== API */
 
-GET('/api/health', () => ({ ok: true, version: VERSION }));
+const BOOT_ID = randomToken(6);
+GET('/api/health', () => ({ ok: true, version: VERSION, boot: BOOT_ID }));
 
 // ---------- Auth
 GET('/api/auth/status', (req) => ({ needsSetup: Q.userCount.get().n === 0, user: req.user ? userOut(req.user) : null, version: VERSION }));
@@ -514,6 +531,7 @@ PATCH('/api/rundowns/:id', need('editor'), (req) => {
 
 DELETE('/api/rundowns/:id', need('editor'), (req) => {
   const rd = getRundown(req.params.id);
+  try { backup.create('vor-loeschen', rd.title); } catch (e) { console.error('  Sicherung vor dem Löschen fehlgeschlagen:', e.message); }
   Q.deleteRd.run(rd.id);
   for (const c of clients) if (c.rundownId === rd.id) sse(c, 'deleted', { id: rd.id });
   broadcastLobby();
@@ -895,6 +913,48 @@ GET('/api/companion/:token/:action', companionAction); // GET erlaubt, da manche
 GET('/api/rundowns/:id/cue', need('viewer'), (req) => cueInfo(getRundown(req.params.id)));
 GET('/api/rundowns/:id/export', need('viewer'), (req) => rundownExport(getRundown(req.params.id)));
 
+// ---------- Backups (nur Admin – Backups enthalten Benutzer, Passwort-Hashes und Tokens)
+GET('/api/backups', need('admin'), () => ({ status: backup.status(), backups: backup.list() }));
+
+PATCH('/api/backups/settings', need('admin'), (req) => ({ settings: backup.saveSettings(req.body), status: backup.status() }));
+
+POST('/api/backups', need('admin'), (req) => {
+  const b = backup.create('manuell', req.body.label);
+  console.log(`[Backup] Manuelles Backup von ${req.user.email}: ${b.name}`);
+  return { backup: b, status: backup.status() };
+});
+
+GET('/api/backups/:name/download', need('admin'), (req, res) => {
+  const file = backup.fileFor(req.params.name);
+  const st = fs.statSync(file);
+  res.writeHead(200, {
+    'Content-Type': 'application/vnd.sqlite3',
+    'Content-Length': st.size,
+    'Content-Disposition': `attachment; filename="${req.params.name}"`,
+    'Cache-Control': 'no-store',
+  });
+  fs.createReadStream(file).pipe(res);
+  return undefined;
+});
+
+DELETE('/api/backups/:name', need('admin'), (req) => { backup.remove(req.params.name); return { ok: true, status: backup.status() }; });
+
+rawRoute('POST', '/api/backups/upload', need('admin'), async (req) => {
+  const buf = await readRaw(req, 500 * 1024 * 1024);
+  if (!buf.length) fail(400, 'Leere Datei');
+  const b = backup.importUpload(buf, String(req.query.name || ''));
+  console.log(`[Backup] Hochgeladen von ${req.user.email}: ${b.name}`);
+  return { backup: b };
+});
+
+POST('/api/backups/:name/restore', need('admin'), (req, res) => {
+  if (req.body.confirm !== true) fail(400, 'Bestätigung fehlt');
+  const { summary, safety } = backup.prepareRestore(req.params.name);
+  console.log(`[Backup] Wiederherstellung von ${req.params.name} durch ${req.user.email} – aktueller Stand gesichert als ${safety.name}. Server startet neu …`);
+  res.on('finish', () => setTimeout(() => shutdown(backup.RESTART_EXIT_CODE), 300));
+  return { ok: true, summary, safety: safety.name, restarting: true };
+});
+
 // ---------- Präsenz
 POST('/api/presence/focus', need('viewer'), (req) => {
   const c = [...clients].find((x) => x.id === String(req.body.clientId || req.headers['x-client-id'] || ''));
@@ -989,7 +1049,7 @@ const server = http.createServer(async (req, res) => {
         const host = req.headers['x-forwarded-host'] || req.headers.host;
         if (origin && new URL(origin).host !== host) fail(403, 'Ungültiger Ursprung');
       }
-      req.body = req.method === 'GET' ? {} : await readBody(req);
+      req.body = req.method === 'GET' || r.raw ? {} : await readBody(req);
       let result;
       for (const h of r.handlers) {
         result = await h(req, res);
@@ -1019,10 +1079,16 @@ server.listen(PORT, HOST, () => {
   console.log(`  Lokal:     http://localhost:${PORT}`);
   for (const ip of ips) console.log(`  Netzwerk:  http://${ip}:${PORT}`);
   console.log(`  Daten:     ${DATA_DIR}`);
+  console.log(`  Backups:   ${backup.BACKUP_DIR} (${backup.getSettings().enabled ? `alle ${backup.getSettings().interval_hours} Std., ${backup.getSettings().keep} behalten` : 'automatisch aus'})`);
+  backup.startScheduler();
   if (Q.userCount.get().n === 0) console.log('\n  → Erster Start: Im Browser öffnen und Admin-Konto anlegen.');
   console.log('');
 });
 
-const shutdown = () => { for (const c of clients) c.res.end(); server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(0), 3000).unref(); };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+function shutdown(code = 0) {
+  for (const c of clients) { try { c.res.end(); } catch { /* */ } }
+  server.close(() => { try { db.close(); } catch { /* */ } process.exit(code); });
+  setTimeout(() => process.exit(code), 3000).unref();
+}
+process.on('SIGINT', () => shutdown(0));
+process.on('SIGTERM', () => shutdown(0));
