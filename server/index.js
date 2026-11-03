@@ -943,6 +943,8 @@ const MUST_CHANGE_ALLOWED = ['/api/auth/status', '/api/auth/logout', '/api/auth/
 
 const PAGES = [
   [/^\/p\/[^/]+\/?$/, 'index.html'],
+  [/^\/timer\/p\/[^/]+\/?$/, 'timer.html'],
+  [/^\/timer\/\d+\/?$/, 'timer.html'],
   [/^\/live\/p\/[^/]+\/?$/, 'live.html'],
   [/^\/live\/\d+\/?$/, 'live.html'],
 ];
