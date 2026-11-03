@@ -500,7 +500,7 @@ function relTime(sqlDate) {
 
 const PRESENCE_COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#a3e635'];
 const userColor = (id) => PRESENCE_COLORS[Math.abs(Number(id) || 0) % PRESENCE_COLORS.length];
-const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
+const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', prompter: 'im Prompter', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
 
 /** Kleiner Avatar-Stapel für eine Liste von Personen */
 function avatarStack(people, { max = 4, size = 'xs', title = '' } = {}) {

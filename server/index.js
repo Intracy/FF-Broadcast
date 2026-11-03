@@ -912,7 +912,7 @@ GET('/api/presence/:id', need('viewer'), (req) => presenceFor(getRundown(req.par
 GET('/api/events', (req, res) => {
   const q = req.query;
   const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false,
-    view: ['editor', 'live', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
+    view: ['editor', 'live', 'prompter', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
   if (q.public) {
     const rd = publicRundown(q.public);
     client.rundownId = rd.id;
