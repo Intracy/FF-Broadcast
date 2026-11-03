@@ -837,6 +837,7 @@ function buildRundownPage() {
   R.end = h('span');
 
   const headActions = h('div', { class: 'rd-head-actions' },
+    h('button', { class: 'btn', title: 'Prompter in neuem Fenster öffnen', onclick: () => window.open(S.publicToken ? `/prompter/p/${encodeURIComponent(S.publicToken)}` : `/prompter/${rd.id}`, '_blank') }, icon('prompter'), h('span', { class: 'lbl' }, 'Prompter')),
     h('button', { class: 'btn', onclick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${rd.id}`, '_blank') }, icon('external'), h('span', { class: 'lbl' }, 'Live-Ansicht')),
     h('button', { class: 'btn', onclick: (e) => viewMenu(e.currentTarget) }, icon('eye'), h('span', { class: 'lbl' }, 'Ansicht')),
     !S.publicToken ? h('button', { class: 'btn', onclick: publicLinkModal }, icon('share'), h('span', { class: 'lbl' }, 'Öffentlicher Link')) : null,

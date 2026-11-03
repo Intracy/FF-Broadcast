@@ -945,6 +945,8 @@ const PAGES = [
   [/^\/p\/[^/]+\/?$/, 'index.html'],
   [/^\/live\/p\/[^/]+\/?$/, 'live.html'],
   [/^\/live\/\d+\/?$/, 'live.html'],
+  [/^\/prompter\/p\/[^/]+\/?$/, 'prompter.html'],
+  [/^\/prompter\/\d+\/?$/, 'prompter.html'],
 ];
 
 const server = http.createServer(async (req, res) => {
