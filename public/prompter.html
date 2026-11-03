@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Prompter · Rundown</title>
+  <link rel="icon" href="/img/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/img/favicon-64.png" type="image/png" sizes="64x64">
+  <link rel="apple-touch-icon" href="/img/icon-180.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preload" href="/fonts/ibm-plex-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script>document.documentElement.dataset.theme = localStorage.getItem('ffr.theme') || 'dark';</script>
+  <style>
+    html, body { height: 100%; overflow: hidden; background: #000; }
+    .pr { height: 100%; display: flex; flex-direction: column; background: #000; color: #fff; }
+
+    /* Werkzeugleiste */
+    .pr-tools { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px max(12px, 1.5vw); background: var(--bg-2); color: var(--text); border-bottom: 1px solid var(--border); }
+    .pr-tools .brand-mark .ico { width: 24px; height: 24px; }
+    .pr-name { font-family: var(--font-cond); font-weight: 700; font-size: 17px; text-transform: uppercase; letter-spacing: .02em; max-width: 22vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pr-play { width: 44px; height: 36px; border-radius: 9px; border: 0; display: inline-grid; place-items: center; background: var(--surface-2); color: var(--text); }
+    .pr-play .ico { width: 18px; height: 18px; }
+    .pr-play.on { background: var(--green); color: #04130a; }
+    .pr-group { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 10px; height: 36px; border-radius: 9px; background: var(--surface-2); }
+    .pr-group .k { font-family: var(--font-cond); font-weight: 700; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); margin-right: 4px; }
+    .pr-group .v { min-width: 34px; text-align: center; font-family: var(--font-mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+    .pr-group .icon-btn { width: 30px; height: 30px; }
+    .pr-group .icon-btn .ico { width: 15px; height: 15px; }
+    .pr-tools .icon-btn.fs { margin-left: auto; }
+    .pr-timer { font-family: var(--font-mono); font-weight: 600; font-size: 22px; font-variant-numeric: tabular-nums; color: var(--green-text); padding: 0 6px; }
+    .pr-timer.warn { color: var(--yellow); }
+    .pr-timer.over { color: var(--red-text); }
+    .pr-timer.idle { color: var(--muted); }
+
+    /* Bühne */
+    .pr-stage { position: relative; flex: 1; min-height: 0; }
+    .pr-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+    .pr-scroll::-webkit-scrollbar { display: none; }
+    .pr-text { font-family: var(--font); font-weight: 600; line-height: 1.32; overflow-wrap: break-word; }
+    .pr-text.mirror { transform: scaleX(-1); }
+    .pr-text.upper { text-transform: uppercase; }
+    .pr-sec { padding: .2em 0 .9em; transition: opacity .3s; }
+    .pr-sec + .pr-sec { border-top: 2px solid rgba(255, 255, 255, .18); padding-top: .6em; }
+    .pr-text.plain .pr-sec + .pr-sec { border-top: 0; padding-top: 0; }
+    .pr-text.plain .pr-head, .pr-text.plain .pr-block { display: none; }
+    .pr-sec.done { opacity: .45; }
+    .pr-head { display: flex; align-items: baseline; gap: .5em; font-family: var(--font-cond); font-weight: 700; font-size: .5em; letter-spacing: .04em; text-transform: uppercase; color: rgba(255, 255, 255, .6); margin-bottom: .35em; }
+    .pr-head .nr { display: inline-grid; place-items: center; min-width: 1.8em; height: 1.5em; padding: 0 .3em; border-radius: .3em; background: rgba(255, 255, 255, .14); color: #fff; font-family: var(--font-mono); font-size: .85em; }
+    .pr-sec.current .pr-head { color: var(--green-text); }
+    .pr-sec.current .pr-head .nr { background: var(--green); color: #04130a; }
+    .pr-block { font-family: var(--font-cond); font-weight: 700; font-size: .45em; letter-spacing: .1em; text-transform: uppercase; color: rgba(255, 255, 255, .5); padding: .8em 0 .4em; }
+    .pr-sec p { margin: 0 0 .5em; white-space: pre-wrap; }
+    .pr-empty { color: rgba(255, 255, 255, .3); font-style: italic; font-weight: 400; font-size: .5em; }
+    .pr-guide { position: absolute; left: 0; right: 0; height: 0; pointer-events: none; }
+    .pr-guide::before, .pr-guide::after { content: ''; position: absolute; top: -14px; border: 14px solid transparent; }
+    .pr-guide::before { left: 0; border-left: 20px solid var(--green); }
+    .pr-guide::after { right: 0; border-right: 20px solid var(--green); }
+    .pr-guide .line { position: absolute; left: 22px; right: 22px; top: -1px; height: 2px; background: color-mix(in srgb, var(--green) 35%, transparent); }
+    .pr-blackout { position: absolute; left: 0; right: 0; top: 0; background: rgba(0, 0, 0, .78); pointer-events: none; }
+
+    /* Farben umkehren */
+    .pr.inverted, .pr.inverted .pr-scroll { background: #fff; color: #000; }
+    .pr.inverted .pr-head, .pr.inverted .pr-block { color: rgba(0, 0, 0, .55); }
+    .pr.inverted .pr-head .nr { background: rgba(0, 0, 0, .1); color: #000; }
+    .pr.inverted .pr-sec + .pr-sec { border-top-color: rgba(0, 0, 0, .15); }
+    .pr.inverted .pr-empty { color: rgba(0, 0, 0, .3); }
+    .pr.inverted .pr-blackout { background: rgba(255, 255, 255, .82); }
+
+    /* Optionen */
+    .pr-opts { padding: 6px; min-width: 270px; }
+    .pr-opts .field { margin: 4px 6px 10px; }
+    .pr-range input { width: 100%; accent-color: var(--green); }
+    .pr-range b { color: var(--text); font-family: var(--font-mono); font-weight: 500; }
+    .pr-cues { max-height: 60vh; overflow: auto; min-width: 260px; }
+    .pr-cues .mi .nr { font-family: var(--font-mono); color: var(--text-2); min-width: 26px; }
+    .pr-cues .mi.active .nr { color: inherit; }
+
+    .lw-msg { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--text-2); font-size: 17px; background: var(--bg); }
+    .lw-msg a { color: var(--text); text-decoration: underline; }
+
+    @media (max-width: 900px) {
+      .pr-name { display: none; }
+      .pr-tools .btn .lbl { display: none; }
+      .pr-group .k { display: none; }
+      .pr-group { padding-left: 2px; }
+    }
+    @media (max-width: 600px) {
+      .pr-tools { gap: 6px; padding: 6px 8px; }
+      .pr-tools .brand-mark { display: none; }
+      .pr-timer { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <script type="module" src="/js/prompter.js"></script>
+</body>
+</html>

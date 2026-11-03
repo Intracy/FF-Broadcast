@@ -203,7 +203,7 @@ function resetRecord(token) {
   return u ? { r, u } : null;
 }
 const json = (s, fb) => { try { return JSON.parse(s); } catch { return fb; } };
-const itemOut = (i) => ({ id: i.id, type: i.type, title: i.title, description: i.description, duration: i.duration, color: i.color, cells: json(i.cells, {}) });
+const itemOut = (i) => ({ id: i.id, type: i.type, title: i.title, description: i.description, script: i.script || '', duration: i.duration, color: i.color, cells: json(i.cells, {}) });
 const colOut = (c) => ({ id: c.id, name: c.name, position: c.position, is_public: !!c.is_public });
 const loadItems = (rid) => Q.itemsByRd.all(rid).map(itemOut);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -271,7 +271,7 @@ function kickUser(userId) {
 /* ------------------------------------------------------------------ Präsenz: Wer ist gerade online? */
 // Jede offene Verbindung (Tab/Gerät) ist ein Client. Angemeldete Clients zählen als Person,
 // öffentliche Links nur als anonyme Zuschauer. Der Fokus zeigt, welches Feld gerade bearbeitet wird.
-const FOCUS_FIELD_RE = /^(title|description|duration|cell:\d+)$/;
+const FOCUS_FIELD_RE = /^(title|description|script|duration|cell:\d+)$/;
 
 function presenceFor(rid) {
   const people = new Map();
@@ -629,7 +629,8 @@ POST('/api/rundowns/:id/duplicate', needCreator, needRd('viewer'), (req) => {
     for (const c of Q.colsByRd.all(rd.id)) map[c.id] = Number(Q.insertCol.run(rid, c.name, c.position, c.is_public).lastInsertRowid);
     for (const i of Q.itemsByRd.all(rd.id)) {
       const cells = Object.fromEntries(Object.entries(json(i.cells, {})).filter(([k]) => map[k]).map(([k, v]) => [map[k], v]));
-      Q.insertItem.run(rid, i.position, i.type, i.title, i.description, i.duration, i.color, JSON.stringify(cells));
+      const nid = Q.insertItem.run(rid, i.position, i.type, i.title, i.description, i.duration, i.color, JSON.stringify(cells)).lastInsertRowid;
+      if (i.script) Q.setItemScript.run(i.script, nid);
     }
     return Number(rid);
   });
@@ -677,10 +678,11 @@ function getItem(id) {
 
 PATCH('/api/items/:id', needRd('editor', ridOfItem), (req) => {
   const it = getItem(req.params.id);
-  const { title, description, duration, color, cells } = req.body;
+  const { title, description, script, duration, color, cells } = req.body;
   const upd = {};
   if (title !== undefined) upd.title = String(title).slice(0, 2000);
   if (description !== undefined) upd.description = String(description).slice(0, 10000);
+  if (script !== undefined) upd.script = String(script).slice(0, 50000);
   if (duration !== undefined) upd.duration = Math.max(0, Math.min(24 * 3600, parseInt(duration, 10) || 0));
   if (color !== undefined) { if (!COLOR_RE.test(color)) fail(400, 'Ungültige Farbe'); upd.color = color; }
   if (cells && typeof cells === 'object') {
@@ -688,7 +690,7 @@ PATCH('/api/items/:id', needRd('editor', ridOfItem), (req) => {
     for (const [k, v] of Object.entries(cells)) merged[k] = String(v ?? '').slice(0, 10000);
     upd.cells = JSON.stringify(merged);
   }
-  updateRow('items', it.id, upd, ['title', 'description', 'duration', 'color', 'cells']);
+  updateRow('items', it.id, upd, ['title', 'description', 'script', 'duration', 'color', 'cells']);
   changed(it.rundown_id, req);
   return { ok: true, item: itemOut(Q.itemById.get(it.id)) };
 });
@@ -834,6 +836,7 @@ function cueOut(it, ctx) {
     ...base,
     nr: s.nr,
     description: it.description,
+    script: it.script || '',
     block: s.block?.title ?? null,
     duration_sec: it.duration,
     duration: fmtDuration(it.duration),
@@ -1055,7 +1058,7 @@ GET('/api/presence/:id', needRd('viewer'), (req) => presenceFor(getRundown(req.p
 GET('/api/events', (req, res) => {
   const q = req.query;
   const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false,
-    view: ['editor', 'live', 'timer', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
+    view: ['editor', 'live', 'prompter', 'timer', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
   if (q.public) {
     const rd = publicRundown(q.public);
     client.rundownId = rd.id;
@@ -1094,6 +1097,8 @@ const PAGES = [
   [/^\/timer\/\d+\/?$/, 'timer.html'],
   [/^\/live\/p\/[^/]+\/?$/, 'live.html'],
   [/^\/live\/\d+\/?$/, 'live.html'],
+  [/^\/prompter\/p\/[^/]+\/?$/, 'prompter.html'],
+  [/^\/prompter\/\d+\/?$/, 'prompter.html'],
 ];
 
 const server = http.createServer(async (req, res) => {

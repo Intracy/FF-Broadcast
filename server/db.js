@@ -101,6 +101,7 @@ for (const sql of [
   'ALTER TABLE rundowns ADD COLUMN companion_rotated_by TEXT',
   'ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE users ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0',
+  "ALTER TABLE items ADD COLUMN script TEXT NOT NULL DEFAULT ''", // Skript für den Prompter
 ]) { try { db.exec(sql); } catch { /* Spalte existiert bereits */ } }
 
 // Freigaben einzelner Rundowns für einzelne Benutzer (z. B. externe Dienstleister)
@@ -193,6 +194,7 @@ export const Q = {
 
   itemsByRd: db.prepare('SELECT * FROM items WHERE rundown_id=? ORDER BY position, id'),
   itemById: db.prepare('SELECT * FROM items WHERE id=?'),
+  setItemScript: db.prepare('UPDATE items SET script=? WHERE id=?'),
   insertItem: db.prepare('INSERT INTO items (rundown_id,position,type,title,description,duration,color,cells) VALUES (?,?,?,?,?,?,?,?)'),
   deleteItem: db.prepare('DELETE FROM items WHERE id=?'),
   setItemPos: db.prepare('UPDATE items SET position=? WHERE id=? AND rundown_id=?'),
