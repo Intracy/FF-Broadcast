@@ -17,4 +17,11 @@ fi
 export PORT="${PORT:-3000}"
 echo "Starte FF Rundown auf Port $PORT … (Fenster offen lassen, Beenden mit Ctrl+C)"
 ( sleep 2; open "http://localhost:$PORT" ) &
-exec node --no-warnings server/index.js
+# Exit-Code 75 = Neustart angefordert (z. B. nach Wiederherstellung eines Backups)
+while :; do
+  node --no-warnings server/index.js
+  code=$?
+  [ "$code" -eq 75 ] || break
+  echo "Neustart …"
+done
+read -n 1 -s -r -p "Server beendet – Taste drücken zum Schließen …"

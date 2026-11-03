@@ -117,6 +117,7 @@ async function router() {
   let m;
   if ((m = hash.match(/^#\/rundown\/(\d+)/))) return viewRundown(Number(m[1]));
   if (hash === '#/users' && can('admin')) return viewUsers();
+  if (hash === '#/system' && can('admin')) return viewSystem();
   if (hash !== '#/rundowns') history.replaceState(null, '', '#/rundowns');
   return viewRundowns();
 }
@@ -134,6 +135,7 @@ function userMenu(anchor) {
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi', onclick: () => { closePop(); changePassword(); } }, icon('key'), 'Passwort ändern'),
     can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/users'); } }, icon('users'), 'Benutzer verwalten') : null,
+    can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/system'); } }, icon('database'), 'System & Backups') : null,
     h('button', { class: 'mi', onclick: () => { closePop(); document.querySelector('.topbar .theme-toggle')?.click(); } }, icon(theme() === 'dark' ? 'sun' : 'moon'), theme() === 'dark' ? 'Helles Design' : 'Dunkles Design'),
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi danger-mi', onclick: () => { closePop(); logout(); } }, icon('logout'), 'Abmelden'),
@@ -153,7 +155,8 @@ function topbar(active) {
     brand('a', { href: '#/rundowns' }),
     h('nav', { class: 'nav' },
       h('a', { href: '#/rundowns', class: active === 'rundowns' ? 'active' : '' }, icon('list'), h('span', null, 'Rundowns')),
-      can('admin') ? h('a', { href: '#/users', class: active === 'users' ? 'active' : '' }, icon('users'), h('span', null, 'Benutzer')) : null),
+      can('admin') ? h('a', { href: '#/users', class: active === 'users' ? 'active' : '' }, icon('users'), h('span', null, 'Benutzer')) : null,
+      can('admin') ? h('a', { href: '#/system', class: active === 'system' ? 'active' : '' }, icon('database'), h('span', null, 'System')) : null),
     h('div', { class: 'spacer' }),
     themeToggle(),
     h('button', { class: 'user-btn', title: 'Konto', onclick: (e) => userMenu(e.currentTarget) },
@@ -734,6 +737,134 @@ async function viewUsers() {
   };
 
   await load();
+}
+
+/* ================================================================== System & Backups */
+const fmtBytes = (b) => b == null ? '–' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : b < 1073741824 ? `${(b / 1048576).toFixed(1)} MB` : `${(b / 1073741824).toFixed(1)} GB`;
+const fmtDateTime = (ms) => new Date(ms).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+function relFuture(ms) {
+  const d = (ms - Date.now()) / 1000;
+  if (d < 60) return 'in Kürze';
+  if (d < 3600) return `in ${Math.round(d / 60)} Min.`;
+  if (d < 86400) return `in ${Math.round(d / 3600)} Std.`;
+  return `in ${Math.round(d / 86400)} Tagen`;
+}
+const KIND_ICON = { auto: 'history', manuell: 'user', 'vor-wiederherstellung': 'shield', 'vor-loeschen': 'trash', upload: 'upload' };
+
+async function viewSystem() {
+  let data;
+  const head = h('div', { class: 'page-head' },
+    h('div', null, h('div', { class: 'label' }, 'Verwaltung'), h('h1', null, 'System & Backups'), h('div', { class: 'muted', style: { marginTop: '4px' } }, 'Sicherungen der kompletten Datenbank: Rundowns, Benutzer, Links und Tokens.')),
+    h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+      h('button', { class: 'btn', onclick: () => fileIn.click() }, icon('upload'), 'Backup hochladen'),
+      h('button', { class: 'btn primary', onclick: () => backupNow() }, icon('database'), 'Jetzt sichern')));
+  const fileIn = h('input', { type: 'file', accept: '.db,application/vnd.sqlite3,application/octet-stream', style: { display: 'none' }, onchange: (e) => upload(e.target.files[0]) });
+  const statusBox = h('div', { class: 'bk-status' });
+  const listBox = h('div', { class: 'bk-list' });
+  shell('system', h('div', { class: 'page page-narrow' }, head, fileIn, statusBox,
+    h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), h('span', { class: 'muted bk-sum' })), listBox,
+    h('div', { class: 'sec-info', style: { marginTop: '22px' } },
+      h('div', null, icon('shield'), h('span', null, h('b', null, 'Backups enthalten alle Daten'), ' inkl. E-Mail-Adressen, Passwort-Hashes, API-Tokens und öffentlicher Links. Heruntergeladene Dateien bitte sicher aufbewahren.')),
+      h('div', null, icon('hardDrive'), h('span', null, h('b', null, 'Tipp: '), 'Backups zusätzlich auf einem anderen Datenträger ablegen (USB-Stick, NAS), z. B. mit der Umgebungsvariable ', h('code', null, 'BACKUP_DIR'), ' – fällt die SD-Karte oder Festplatte aus, sind sie sonst mit weg.')))));
+
+  const load = async () => { data = await api('GET', '/api/backups'); draw(); };
+  const draw = () => {
+    const st = data.status, s = st.settings, lock = st.env_locked;
+    const sel = (key, opts, fmt) => h('select', { class: 'input sort-sel', disabled: lock[key], title: lock[key] ? 'Per Umgebungsvariable festgelegt' : '', onchange: (e) => save({ [key]: Number(e.target.value) }) },
+      opts.map((v) => h('option', { value: v, selected: v === s[key] }, fmt(v))));
+    fill(statusBox,
+      h('div', { class: 'card bk-card' },
+        h('div', { class: 'bk-card-top' },
+          h('div', { class: 'bk-ico' + (s.enabled ? ' on' : '') }, icon('history')),
+          h('div', { class: 'bk-title' },
+            h('b', null, s.enabled ? 'Automatische Backups sind aktiv' : 'Automatische Backups sind aus'),
+            h('span', null, s.enabled ? `Alle ${s.interval_hours === 168 ? '7 Tage' : s.interval_hours + ' Std.'} · die letzten ${s.keep} automatischen werden behalten` : 'Es werden nur manuelle Backups und Sicherungen vor dem Löschen erstellt.')),
+          h('label', { class: 'switch', title: lock.enabled ? 'Per Umgebungsvariable festgelegt' : '' }, h('input', { type: 'checkbox', checked: s.enabled, disabled: lock.enabled, onchange: (e) => save({ enabled: e.target.checked }) }))),
+        h('div', { class: 'bk-grid' },
+          h('div', null, h('span', null, 'Letztes Backup'), h('b', null, st.last ? relTime(new Date(st.last.created_at).toISOString().replace('T', ' ').slice(0, 19)) : 'noch keins'), st.last ? h('small', null, fmtDateTime(st.last.created_at)) : null),
+          h('div', null, h('span', null, 'Nächstes automatisch'), h('b', null, st.next_at ? relFuture(st.next_at) : '–'), st.next_at ? h('small', null, fmtDateTime(st.next_at)) : null),
+          h('div', null, h('span', null, 'Intervall'), sel('interval_hours', st.intervals, (v) => v === 168 ? 'wöchentlich' : v === 1 ? 'stündlich' : `alle ${v} Std.`)),
+          h('div', null, h('span', null, 'Aufbewahren'), sel('keep', st.keeps, (v) => `letzte ${v}`)),
+          h('div', { class: 'bk-wide' }, h('span', null, 'Speicherort'), h('code', { title: st.dir }, st.dir), h('small', null, `${st.count} Backups · ${fmtBytes(st.total_bytes)}` + (st.free_bytes != null ? ` · ${fmtBytes(st.free_bytes)} frei` : '') + (st.dir_is_default ? '' : ' · eigener Speicherort (BACKUP_DIR)')))),
+        st.last_error ? h('div', { class: 'danger-box', style: { marginTop: '12px', marginBottom: 0 } }, icon('alert'), h('div', null, h('b', null, 'Letztes Backup fehlgeschlagen'), `${fmtDateTime(st.last_error.at)}: ${st.last_error.message}`)) : null));
+
+    $('.bk-sum').textContent = data.backups.length ? `${data.backups.length} Dateien` : '';
+    if (!data.backups.length) { fill(listBox, h('div', { class: 'ov-empty' }, icon('database'), h('b', null, 'Noch keine Backups'), h('span', null, 'Das erste automatische Backup entsteht kurz nach dem Start – oder jetzt mit „Jetzt sichern“.'))); return; }
+    fill(listBox, data.backups.map((b, i) => h('div', { class: 'bk-row' + (b.valid ? '' : ' invalid') },
+      h('div', { class: `bk-kind k-${b.kind}` }, icon(KIND_ICON[b.kind] || 'database')),
+      h('div', { class: 'bk-main' },
+        h('div', { class: 'bk-name' }, h('b', null, fmtDateTime(b.created_at)), h('span', { class: `st-badge bk-badge k-${b.kind}` }, b.kind_label), i === 0 ? h('span', { class: 'st-badge st-public' }, 'Neuestes') : null),
+        h('div', { class: 'bk-meta' },
+          b.label ? h('span', { class: 'bk-label' }, '„' + b.label + '“') : null,
+          b.valid ? h('span', null, `${b.summary.rundowns} Rundowns · ${b.summary.items} Punkte · ${b.summary.users} Benutzer`) : h('span', { class: 'red' }, 'Datei beschädigt oder unvollständig'),
+          h('span', null, fmtBytes(b.size)))),
+      h('div', { class: 'bk-act' },
+        h('a', { class: 'icon-btn', title: 'Herunterladen', href: `/api/backups/${encodeURIComponent(b.name)}/download`, download: b.name }, icon('download')),
+        b.valid ? h('button', { class: 'btn sm', onclick: () => restore(b) }, icon('rotate'), 'Wiederherstellen') : null,
+        h('button', { class: 'icon-btn del', title: 'Löschen', onclick: async () => {
+          if (!(await confirmDialog(`Backup vom ${fmtDateTime(b.created_at)} endgültig löschen?`, { title: 'Backup löschen?' }))) return;
+          try { await api('DELETE', '/api/backups/' + encodeURIComponent(b.name)); toast('Backup gelöscht', 'ok'); load(); } catch (e) { toast(e.message, 'err'); }
+        } }, icon('trash'))))));
+  };
+
+  const save = async (patch) => {
+    try { const r = await api('PATCH', '/api/backups/settings', patch); data.status = r.status; draw(); toast('Einstellungen gespeichert', 'ok'); }
+    catch (e) { toast(e.message, 'err'); load(); }
+  };
+
+  const backupNow = () => formModal({
+    title: 'Backup jetzt erstellen',
+    submitLabel: 'Sichern',
+    fields: [{ name: 'label', label: 'Bezeichnung (optional)', placeholder: 'z. B. vor dem Finale' }],
+    onSubmit: async (v) => { await api('POST', '/api/backups', { label: v.label }); toast('Backup erstellt', 'ok'); load(); },
+  });
+
+  const upload = async (file) => {
+    fileIn.value = '';
+    if (!file) return;
+    try {
+      const res = await fetch('/api/backups/upload?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file, credentials: 'same-origin' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Upload fehlgeschlagen');
+      toast('Backup hochgeladen und geprüft', 'ok');
+      await load();
+      if (await confirmDialog(`Die Datei enthält ${d.backup.summary.rundowns} Rundowns und ${d.backup.summary.users} Benutzer. Jetzt wiederherstellen?`, { okLabel: 'Weiter zur Wiederherstellung', danger: false, title: 'Hochgeladen' })) restore(d.backup);
+    } catch (e) { toast(e.message, 'err'); }
+  };
+
+  const restore = async (b) => {
+    const ok = await confirmTyped({
+      title: 'Backup wiederherstellen',
+      intro: `Stand vom ${fmtDateTime(b.created_at)} (${b.summary.rundowns} Rundowns, ${b.summary.users} Benutzer) ersetzt die aktuellen Daten.`,
+      points: [
+        'Alle Änderungen seit diesem Backup gehen verloren – der aktuelle Stand wird vorher automatisch als Backup „Vor Wiederherstellung“ gesichert.',
+        'Der Server startet neu; alle Benutzer werden kurz getrennt. Ein laufender Live-Durchlauf wird unterbrochen.',
+        'Benutzer, Passwörter, öffentliche Links und API-Tokens entsprechen danach dem Stand des Backups.',
+      ],
+      word: 'WIEDERHERSTELLEN',
+      okLabel: 'Jetzt wiederherstellen',
+    });
+    if (!ok) return;
+    let bootBefore = null;
+    try { bootBefore = (await (await fetch('/api/health', { cache: 'no-store' })).json()).boot; } catch { /* */ }
+    try { await api('POST', `/api/backups/${encodeURIComponent(b.name)}/restore`, { confirm: true }); }
+    catch (e) { return toast(e.message, 'err'); }
+    disconnect();
+    const msg = h('div', { class: 'restart-msg' }, 'Server startet neu …');
+    document.body.append(h('div', { class: 'restart-overlay' }, h('div', { class: 'restart-box' }, h('div', { class: 'spinner' }), h('b', null, 'Backup wird wiederhergestellt'), msg)));
+    const t0 = Date.now();
+    const poll = async () => {
+      try {
+        const r = await (await fetch('/api/health', { cache: 'no-store' })).json();
+        if (r.boot && r.boot !== bootBefore) { msg.textContent = 'Fertig – lade neu …'; setTimeout(() => location.reload(), 600); return; }
+      } catch { /* Server noch nicht da */ }
+      if (Date.now() - t0 > 30000) msg.innerHTML = 'Der Server ist noch nicht wieder erreichbar.<br>Falls er nicht als Dienst läuft, bitte von Hand neu starten – die Wiederherstellung wird beim Start übernommen.';
+      setTimeout(poll, 1000);
+    };
+    setTimeout(poll, 1500);
+  };
+
+  try { await load(); } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ================================================================== Rundown-Ansicht */
