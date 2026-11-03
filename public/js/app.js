@@ -57,6 +57,7 @@ function connect(params, handlers) {
     S.clientId = d.clientId;
     if (d.version && S.version && d.version !== S.version) showUpdateBanner(d.version);
     banner?.remove(); banner = null;
+    focusSent = 'null';
     if (S.helloCount++ > 0) handlers.reconnect?.();
   });
   es.onerror = () => {
@@ -100,7 +101,7 @@ function teardown() {
   disconnect();
   clearInterval(tickTimer); tickTimer = null;
   closePop();
-  S.rd = null; R = {};
+  S.rd = null; R = {}; S.presence = null; focusSent = 'null';
   $$('.modal-back').forEach((m) => m.remove());
 }
 
@@ -372,6 +373,7 @@ async function viewRundowns() {
       h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' })),
     h('div', { class: 'progress' }, h('span', { style: { width: (r.live_progress || 0) + '%' } }))) : null;
 
+  const othersOnline = (r) => (r.online || []).filter((p) => p.id !== S.user.id);
   const card = (r) => h('article', { class: `ov-card st-${rdStatus(r)}`, onclick: () => go('#/rundown/' + r.id) },
     h('div', { class: 'ov-card-head' }, dateTile(r),
       h('div', { class: 'ov-card-title' },
@@ -384,13 +386,15 @@ async function viewRundowns() {
       h('div', null, h('span', null, 'Dauer'), h('b', { class: 'mono' }, fmtDuration(r.total, { hours: true }))),
       h('div', null, h('span', null, 'Punkte'), h('b', null, String(r.item_count)))),
     h('div', { class: 'ov-foot' },
-      h('span', { class: 'muted' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · ${r.column_count} Spalten`),
+      othersOnline(r).length ? h('span', { class: 'ov-online' }, avatarStack(othersOnline(r), { title: 'Gerade geöffnet von ' + othersOnline(r).map((p) => p.name).join(', ') }), `${othersOnline(r).length} online`)
+        : h('span', { class: 'muted' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · ${r.column_count} Spalten`),
       h('span', { class: 'muted' }, 'geändert ' + relTime(r.updated_at))));
 
   const row = (r) => h('div', { class: `ov-row st-${rdStatus(r)}`, onclick: () => go('#/rundown/' + r.id) },
     dateTile(r),
     h('div', { class: 'ov-row-main' },
-      h('div', { class: 'ov-row-title' }, h('b', null, r.title), statusBadge(r), r.public_enabled ? h('span', { class: 'st-badge st-public' }, icon('globe')) : null),
+      h('div', { class: 'ov-row-title' }, h('b', null, r.title), statusBadge(r), r.public_enabled ? h('span', { class: 'st-badge st-public' }, icon('globe')) : null,
+        avatarStack(othersOnline(r), { title: 'Gerade geöffnet von ' + othersOnline(r).map((p) => p.name).join(', ') })),
       r.live ? h('div', { class: 'ov-row-live' }, h('span', { class: 'dot' }), r.live_title ? `${r.live_index}. ${r.live_title}` : 'Live', h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' }))
         : h('div', { class: 'ov-row-sub' },
           h('span', { class: 'sub-d' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · geändert ${relTime(r.updated_at)}`),
@@ -453,7 +457,7 @@ async function viewRundowns() {
 
   const load = async () => { rds = await api('GET', '/api/rundowns'); fetchedAt = Date.now(); draw(); };
   await load();
-  connect({}, { rundowns: debounce(load, 200), reconnect: load });
+  connect({ view: 'overview' }, { rundowns: debounce(load, 200), reconnect: load });
 }
 
 function newRundown() {
@@ -492,6 +496,19 @@ function relTime(sqlDate) {
   if (diff < 172800) return 'gestern';
   if (diff < 7 * 86400) return `vor ${Math.floor(diff / 86400)} Tagen`;
   return d.toLocaleDateString('de-DE');
+}
+
+const PRESENCE_COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#a3e635'];
+const userColor = (id) => PRESENCE_COLORS[Math.abs(Number(id) || 0) % PRESENCE_COLORS.length];
+const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
+
+/** Kleiner Avatar-Stapel für eine Liste von Personen */
+function avatarStack(people, { max = 4, size = 'xs', title = '' } = {}) {
+  if (!people?.length) return null;
+  const shown = people.slice(0, max);
+  return h('span', { class: `av-stack av-${size}`, title: title || people.map((p) => p.name).join(', ') },
+    shown.map((p) => h('span', { class: 'av', style: `--uc:${userColor(p.id)}` }, initials(p))),
+    people.length > max ? h('span', { class: 'av av-more' }, '+' + (people.length - max)) : null);
 }
 
 function initials(u) {
@@ -548,7 +565,8 @@ async function viewUsers() {
 
   const draw = () => {
     const counts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.role === r).length]));
-    sub.textContent = `${users.length} ${users.length === 1 ? 'Benutzer' : 'Benutzer'} · ${counts.admin} Admin${counts.admin === 1 ? '' : 's'}`;
+    const on = users.filter((u) => u.online).length;
+    sub.textContent = `${users.length} Benutzer · ${counts.admin} Admin${counts.admin === 1 ? '' : 's'}` + (on ? ` · ${on} online` : '');
     chips.replaceChildren(...[['all', 'Alle', users.length], ...ROLES.slice().reverse().map((r) => [r, ROLE_LABEL[r], counts[r]])].map(([k, l, n]) =>
       h('button', { class: 'chip' + (filter === k ? ' sel' : ''), onclick: () => { filter = k; draw(); } }, l, h('span', { class: 'n' }, String(n)))));
     const shown = users.filter((u) => (filter === 'all' || u.role === filter) && (!query || u.email.toLowerCase().includes(query) || (u.name || '').toLowerCase().includes(query)));
@@ -568,7 +586,7 @@ async function viewUsers() {
         },
       }, ROLES.slice().reverse().map((r) => h('option', { value: r, selected: r === u.role }, ROLE_LABEL[r])));
       return h('div', { class: 'user-row' },
-        h('div', { class: `avatar role-${u.role}` }, initials(u)),
+        h('div', { class: `avatar role-${u.role}` + (u.online ? ' is-online' : '') }, initials(u)),
         h('div', { class: 'u-info' },
           h('div', { class: 'u-name' }, u.name || u.email.split('@')[0], me ? h('span', { class: 'tag' }, 'Du') : null,
             u.pending ? h('span', { class: 'st-badge st-upcoming', title: u.open_link ? 'Einladungslink gültig bis ' + new Date(u.open_link.expires_at).toLocaleString('de-DE') : 'Einladungslink abgelaufen – neuen erzeugen' }, icon('send'), u.open_link ? 'Einladung offen' : 'Einladung abgelaufen') : null,
@@ -576,7 +594,9 @@ async function viewUsers() {
             !u.pending && u.open_link ? h('span', { class: 'st-badge st-public', title: 'Reset-Link gültig bis ' + new Date(u.open_link.expires_at).toLocaleString('de-DE') }, icon('link'), 'Reset-Link aktiv') : null),
           h('div', { class: 'u-mail' }, u.email)),
         h('div', { class: 'u-role' }, sel),
-        h('div', { class: 'u-last', title: u.last_login ? new Date(u.last_login.replace(' ', 'T') + 'Z').toLocaleString('de-DE') : '' }, h('span', { class: 'lbl' }, 'Letzter Login'), relTime(u.last_login)),
+        u.online
+          ? h('div', { class: 'u-last is-online', title: `${u.online_devices} ${u.online_devices === 1 ? 'Gerät' : 'Geräte'}` }, h('span', { class: 'lbl' }, 'Status'), h('span', { class: 'online-txt' }, h('i', { class: 'on-dot' }), 'Jetzt online'))
+          : h('div', { class: 'u-last', title: u.last_login ? new Date(u.last_login.replace(' ', 'T') + 'Z').toLocaleString('de-DE') : '' }, h('span', { class: 'lbl' }, 'Letzter Login'), relTime(u.last_login)),
         h('div', { class: 'u-actions' },
           h('button', { class: 'icon-btn', title: 'Bearbeiten', onclick: () => userForm(u) }, icon('edit')),
           h('button', { class: 'icon-btn', title: 'Zugang zurücksetzen (Reset-Link oder temporäres Passwort)', onclick: () => resetPassword(u) }, icon('key')),
@@ -588,6 +608,7 @@ async function viewUsers() {
   };
 
   const load = async () => { users = await api('GET', '/api/users'); draw(); };
+  connect({ view: 'users' }, { online: debounce(load, 300), reconnect: load });
 
   const HOURS = [[1, '1 Stunde'], [24, '24 Stunden'], [72, '3 Tage'], [168, '7 Tage']];
   const linkUrl = (token) => `${location.origin}/#/reset/${token}`;
@@ -755,12 +776,13 @@ async function viewRundown(id) {
   try { p = await api('GET', '/api/rundowns/' + id); }
   catch (e) { toast(e.message, 'err'); return go('#/rundowns'); }
   openRundown(p);
-  connect({ rundown: id }, rundownHandlers(() => api('GET', '/api/rundowns/' + id)));
+  connect({ rundown: id, view: 'editor' }, rundownHandlers(() => api('GET', '/api/rundowns/' + id)));
 }
 
 function rundownHandlers(fetcher) {
   return {
     rundown: (p) => applyPayload(p),
+    presence: (p) => { if (S.rd && p.rundownId === S.rd.rundown.id) { S.presence = p; renderPresence(); } },
     live: (m) => {
       if (!S.rd || m.rundownId !== S.rd.rundown.id) return;
       S.rd.live = m.live; S.offset = m.serverNow - Date.now(); S.liveKey = ''; tick();
@@ -838,6 +860,7 @@ function buildRundownPage() {
       h('div', { style: { flex: '1', minWidth: '280px' } },
         !S.publicToken ? h('a', { class: 'back', href: '#/rundowns' }, icon('arrowLeft'), 'Übersicht') : null,
         R.title,
+        R.presence = h('div', { class: 'presence-bar' }),
         h('div', { class: 'rd-meta' },
           h('div', { class: 'grp' }, h('span', { class: 'label' }, 'Datum'), R.date),
           h('div', { class: 'grp' }, h('span', { class: 'label' }, 'Start'), R.start),
@@ -927,6 +950,7 @@ function renderRows() {
   if (!S.rd.items.length) rows.append(h('div', { class: 'empty' }, canEdit() ? 'Noch keine Programmpunkte – füge oben einen hinzu.' : 'Noch keine Programmpunkte.'));
   requestAnimationFrame(() => rows.querySelectorAll('textarea').forEach(autosize));
 
+  renderPresence();
   R.total.textContent = fmtDuration(sched.total, { hours: true });
   R.end.textContent = fmtClock(sched.end, true);
   S.liveKey = '';
@@ -1086,11 +1110,13 @@ function initRowEvents() {
     if (e.key === 'Escape') e.target.blur();
   });
   rows.addEventListener('focusin', (e) => {
+    const fr = e.target.closest('[data-id]');
+    if (fr && e.target.dataset?.f) reportFocus(Number(fr.dataset.id), e.target.dataset.f);
     const row = e.target.closest('[data-id]');
     if (row) S.focusId = Number(row.dataset.id);
     if (e.target.dataset?.f === 'duration') setTimeout(() => e.target.select(), 0);
   });
-  rows.addEventListener('focusout', () => setTimeout(flushSaves, 0));
+  rows.addEventListener('focusout', () => { setTimeout(flushSaves, 0); setTimeout(() => { if (!R.rows?.contains(document.activeElement)) reportFocus(null); }, 50); });
   rows.addEventListener('pointerdown', (e) => {
     const grip = e.target.closest('.grip');
     if (!grip || grip.classList.contains('no-drag') || !canEdit() || e.button > 0) return;
@@ -1248,6 +1274,65 @@ async function liveAction(action, body = {}) {
     S.liveKey = '';
     tick();
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ================================================================== Präsenz */
+let focusSent = 'null', focusTimer = null;
+function reportFocus(itemId, field) {
+  if (S.publicToken || !S.clientId) return;
+  const key = JSON.stringify(itemId ? [itemId, field] : null);
+  if (key === focusSent) return;
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(() => {
+    focusSent = key;
+    api('POST', '/api/presence/focus', { clientId: S.clientId, itemId, field }).catch(() => {});
+  }, itemId ? 120 : 400);
+}
+
+function presenceMenu(anchor) {
+  const p = S.presence || { users: [], viewers: 0 };
+  const fieldName = (f) => f === 'title' ? 'Titel' : f === 'description' ? 'Beschreibung' : f === 'duration' ? 'Dauer'
+    : (S.rd.columns.find((c) => 'cell:' + c.id === f)?.name || 'Spalte');
+  const itemName = (id) => { const it = S.rd.items.find((i) => i.id === id); const nr = S.sched?.map.get(id)?.nr; return it ? `${nr ? nr + '. ' : ''}${it.title || (it.type === 'block' ? 'Block' : 'Ohne Titel')}` : ''; };
+  popover(anchor, [
+    h('div', { class: 'pres-head' }, h('b', null, 'Gerade in diesem Rundown'), h('span', null, `${p.users.length} ${p.users.length === 1 ? 'Person' : 'Personen'}` + (p.viewers ? ` · ${p.viewers} öffentl. Zuschauer` : ''))),
+    ...p.users.map((u) => h('div', { class: 'pres-row' },
+      h('span', { class: 'av av-sm', style: `--uc:${userColor(u.id)}` }, initials(u)),
+      h('div', { class: 'pres-info' },
+        h('b', null, u.name, u.id === S.user?.id ? h('span', { class: 'tag' }, 'Du') : null),
+        h('span', null, [ROLE_LABEL[u.role], u.views.map((v) => VIEW_LABEL[v] || v).join(' + '), u.devices > 1 ? `${u.devices} Geräte` : null].filter(Boolean).join(' · ')),
+        u.focus.length ? h('span', { class: 'pres-focus' }, icon('edit'), `bearbeitet ${itemName(u.focus[0].itemId)} · ${fieldName(u.focus[0].field)}`) : null),
+      h('span', { class: 'on-dot' }))),
+    p.users.length ? null : h('div', { class: 'muted', style: { padding: '8px 12px' } }, 'Niemand sonst online.'),
+  ]);
+}
+
+function renderPresence() {
+  if (!R.rows || !S.rd) return;
+  const p = S.presence || { users: [], viewers: 0 };
+  const me = S.user?.id;
+  const others = p.users.filter((u) => u.id !== me);
+  // Kopfzeile: Avatare aller anderen + Zuschauer
+  if (R.presence) {
+    fill(R.presence,
+      others.length || p.viewers ? h('button', { class: 'presence-btn', title: 'Wer ist gerade online?', onclick: (e) => presenceMenu(e.currentTarget) },
+        others.length ? avatarStack(others, { max: 5, size: 'sm' }) : null,
+        h('span', { class: 'pres-txt' },
+          others.length ? `${others.length} ${others.length === 1 ? 'weitere Person' : 'weitere Personen'} online` : '',
+          others.length && p.viewers ? ' · ' : '',
+          p.viewers ? h('span', { class: 'pres-viewers' }, icon('eye'), String(p.viewers)) : null)) : null);
+  }
+  // Zellen markieren, die andere gerade bearbeiten
+  for (const el of R.rows.querySelectorAll('.peer-edit')) { el.classList.remove('peer-edit'); el.style.removeProperty('--uc'); el.removeAttribute('data-peer'); }
+  for (const u of others) for (const f of u.focus) {
+    const row = R.rows.querySelector(`[data-id="${f.itemId}"]`);
+    const input = row?.querySelector(`[data-f="${f.field}"]`);
+    const cell = input?.closest('.cell, .block-cell');
+    if (!cell) continue;
+    cell.classList.add('peer-edit');
+    cell.style.setProperty('--uc', userColor(u.id));
+    cell.dataset.peer = u.name;
+  }
 }
 
 const followOn = () => S.prefs.follow !== false;
