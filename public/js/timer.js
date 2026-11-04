@@ -39,7 +39,7 @@ function compute() {
     r.big = fmtCountdown(st.remaining);
     r.state = st.paused ? 'warn' : st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : 'ok';
     r.title = st.current.title || 'Ohne Titel';
-    r.label = st.paused ? '⏸ PAUSE' : st.current.description || '';
+    r.label = st.paused ? 'PAUSE' : st.current.description || '';
     r.ou = st.delta;
   } else if (live.endedAt) {
     const hist = live.history || {};
