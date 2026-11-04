@@ -577,7 +577,30 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
   .live-bar .live-now > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .live-bar .live-now > span:last-child { display: none; }
   .live-bar .progress { order: 2; margin: 0; height: 6px; }
-  .live-bar .live-row { order: 3; gap: 6px; flex-wrap: wrap; }
+  /* Steuerung als Raster: oben Zurück · Start/Pause · Weiter (groß), darunter −Zeit · +Zeit · Beenden (klein) */
+  .live-bar .live-row { order: 3; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
+  .live-bar .live-row > .follow-chip, .live-bar .live-row > .muted { grid-column: 1 / -1; }
+  .live-bar .live-row > .live-stats { grid-column: 1 / -1; }
+  .live-bar .live-row > .prev-btn { grid-column: span 2; padding: 0 !important; justify-content: center; }
+  .live-bar .live-row > .start-btn, .live-bar .live-row > .next-btn { grid-column: span 5; height: 54px !important; font-size: 16px; }
+  .live-bar .live-row > .live-stats { order: 0; }
+  .live-bar .live-row > .prev-btn { order: 1; }
+  .live-bar .live-row > .start-btn { order: 2; }
+  .live-bar .live-row > .next-btn { order: 3; }
+  .live-bar .live-row > .step-minus { order: 4; }
+  .live-bar .live-row > .step-plus { order: 5; }
+  .live-bar .live-row > .stop-btn { order: 6; }
+  /* Nicht live: nur ein großer Start-Knopf */
+  .live-bar:not(.is-live) .live-row > .start-btn { grid-column: 1 / -1; }
+  .live-bar:not(.is-live) .live-row > .next-btn { display: none; }
+  .live-bar.is-paused .live-row > .next-btn { background: var(--surface-2); color: var(--text); }
+  .live-bar .live-row > .btn-group, .live-bar .live-row > .stop-btn { grid-column: span 4; }
+  .live-bar .live-row > .btn-group { display: flex; }
+  .live-bar .live-row > .btn-group > .btn:first-child { flex: 1; justify-content: center; }
+  .live-bar .live-row > .btn-group .btn, .live-bar .live-row > .stop-btn { height: 40px !important; font-size: 14px; }
+  .live-bar .live-row > .stop-btn { justify-content: center; background: transparent; color: var(--red-text, #f87171); border: 1px solid color-mix(in srgb, var(--red) 55%, transparent) !important; box-shadow: none; }
+  .live-bar .live-row > .stop-btn .lbl { display: inline; }
+  .live-bar .live-row > .prev-btn .lbl { display: none; }
   .live-bar .title { display: none; }
   .live-bar .live-stats { order: -1; width: 100%; margin: 0; justify-content: space-between; gap: 8px; font-size: 14px; }
   .live-bar .live-stats > span:first-child, .live-bar .live-stats > span:last-child { display: none; }

@@ -1566,7 +1566,7 @@ function buildLiveBar() {
     const chev = h('button', {
       class: 'btn', title: 'Schrittweite', onclick: (e) => menu(e.currentTarget, [10, 30, 60, 120, 300, 600].map((s) => ({ label: stepLabel(s), active: s === S.step, onClick: () => { S.step = s; savePrefs(); $$('.lbl-step').forEach((x) => (x.textContent = stepLabel(s))); } }))),
     }, icon('chevronDown'));
-    const g = h('div', { class: 'btn-group' }, main, chev);
+    const g = h('div', { class: 'btn-group ' + (sign > 0 ? 'step-plus' : 'step-minus') }, main, chev);
     (L.adjust ||= []).push(main, chev);
     return g;
   };
@@ -1586,9 +1586,9 @@ function buildLiveBar() {
     const lv = S.rd.live || {};
     liveAction(!lv.running ? 'start' : lv.pausedAt ? 'resume' : 'pause');
   } }, L.startIco, L.startLbl);
-  L.prev = h('button', { class: 'btn', onclick: () => liveAction('prev') }, icon('skipBack'), h('span', { class: 'lbl' }, 'Zurück'));
+  L.prev = h('button', { class: 'btn prev-btn', title: 'Zurück zum vorherigen Punkt', onclick: () => liveAction('prev') }, icon('skipBack'), h('span', { class: 'lbl' }, 'Zurück'));
   L.nextBtn = h('button', { class: 'btn next-btn', onclick: () => liveAction('next') }, icon('play'), h('span', { class: 'lbl' }, 'Weiter'));
-  L.stop = h('button', { class: 'btn red', onclick: async () => { if (await confirmDialog('Live-Modus beenden? Die gemessenen Zeiten bleiben sichtbar.', { okLabel: 'Beenden', title: 'Live beenden' })) liveAction('stop'); } }, icon('square'), h('span', { class: 'lbl' }, 'Beenden'));
+  L.stop = h('button', { class: 'btn red stop-btn', title: 'Live beenden', onclick: async () => { if (await confirmDialog('Live-Modus beenden? Die gemessenen Zeiten bleiben sichtbar.', { okLabel: 'Beenden', title: 'Live beenden' })) liveAction('stop'); } }, icon('square'), h('span', { class: 'lbl' }, 'Beenden'));
   L.reset = op ? h('button', { class: 'icon-btn', title: 'Gemessene Zeiten zurücksetzen', onclick: async () => { if (await confirmDialog('Live-Status und alle gemessenen Zeiten zurücksetzen?', { okLabel: 'Zurücksetzen', title: 'Zurücksetzen' })) liveAction('reset'); } }, icon('rotate')) : null;
 
   return L.bar = h('section', { class: 'card live-bar' },
@@ -1739,7 +1739,7 @@ function tick() {
       L.prog.className = 'progress';
     }
     L.bar?.classList.toggle('is-paused', !!st.paused);
-    if (st.running && st.paused) L.now.textContent = '⏸ PAUSE · ' + L.now.textContent;
+    if (st.running && st.paused) L.now.textContent = 'PAUSE · ' + L.now.textContent;
     if (L.start) {
       const mode = !st.running ? 'start' : st.paused ? 'resume' : 'pause';
       if (L.start.dataset.mode !== mode) {
