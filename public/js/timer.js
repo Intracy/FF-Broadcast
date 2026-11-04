@@ -37,9 +37,9 @@ function compute() {
   const r = { now, st, play, big: '--:--', state: 'idle', title: '', label: '', ou: null };
   if (st.running) {
     r.big = fmtCountdown(st.remaining);
-    r.state = st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : 'ok';
+    r.state = st.paused ? 'warn' : st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : 'ok';
     r.title = st.current.title || 'Ohne Titel';
-    r.label = st.current.description || '';
+    r.label = st.paused ? '⏸ PAUSE' : st.current.description || '';
     r.ou = st.delta;
   } else if (live.endedAt) {
     const hist = live.history || {};

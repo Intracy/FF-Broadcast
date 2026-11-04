@@ -90,7 +90,7 @@ export function computeSchedule(items, startTime = 0) {
 
 /**
  * Live-Status aus dem gespeicherten Live-Zustand berechnen.
- * live: {running,startedAt,currentId,itemStartedAt,adjust,history}
+ * live: {running,startedAt,currentId,itemStartedAt,adjust,history,pausedAt,pausedMs}
  * delta > 0 = hinter dem Plan (zu spät), delta < 0 = vor dem Plan.
  */
 export function liveStatus(items, live, now = Date.now()) {
@@ -102,13 +102,16 @@ export function liveStatus(items, live, now = Date.now()) {
   let planned = 0, rest = 0;
   for (let i = 0; i < idx; i++) planned += play[i].duration || 0;
   for (let i = idx + 1; i < play.length; i++) rest += play[i].duration || 0;
-  const elapsed = Math.max(0, (now - live.itemStartedAt) / 1000);
+  const t = live.pausedAt || now; // während der Pause steht die Zeit des Punkts still
+  const elapsed = Math.max(0, (t - live.itemStartedAt) / 1000);
   const eff = Math.max(0, (cur.duration || 0) + (live.adjust || 0));
   const remaining = eff - elapsed;
-  const actualOffset = (live.itemStartedAt - live.startedAt) / 1000;
+  const actualOffset = (live.itemStartedAt - live.startedAt - (live.pausedMs || 0)) / 1000;
   const delta = actualOffset - planned + Math.max(elapsed, eff) - (cur.duration || 0);
   return {
     running: true,
+    paused: !!live.pausedAt,
+    pausedFor: live.pausedAt ? Math.max(0, (now - live.pausedAt) / 1000) : 0,
     current: cur,
     next: play[idx + 1] || null,
     index: idx,

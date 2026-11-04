@@ -186,9 +186,9 @@ function render() {
   const play = data.items.filter((i) => i.type === 'item');
   set(el.clock, fmtTime(now));
 
-  const cls = st.running ? (st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : '') : '';
+  const cls = st.running ? (st.paused ? 'warn' : st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : '') : '';
   if (st.running) {
-    set(el.state, `Live · Vergangen ${fmtDuration(st.elapsed)}`);
+    set(el.state, st.paused ? `⏸ Pause · seit ${fmtDuration(st.pausedFor)}` : `Live · Vergangen ${fmtDuration(st.elapsed)}`);
     set(el.since, fmtTime(st.startedAt, false));
     set(el.delta, fmtDuration(st.delta, { sign: true }));
     el.deltaWrap.className = st.delta > 0.5 ? 'red' : 'green';

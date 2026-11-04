@@ -226,8 +226,8 @@ function render() {
   const live = data.live || {};
   const st = liveStatus(data.items, live, Date.now() + offset);
   if (st.running) {
-    set(el.timer, fmtCountdown(st.remaining));
-    el.timer.className = 'pr-timer ' + (st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : '');
+    set(el.timer, (st.paused ? '⏸ ' : '') + fmtCountdown(st.remaining));
+    el.timer.className = 'pr-timer ' + (st.paused ? 'warn' : st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : '');
   } else {
     set(el.timer, '--:--');
     el.timer.className = 'pr-timer idle';

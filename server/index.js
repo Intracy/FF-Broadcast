@@ -992,7 +992,8 @@ function cueOut(it, ctx) {
       adjust_sec: st.adjust,
       progress: Math.round(st.progress * 100),
       overtime: st.remaining < 0,
-      state: st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running',
+      state: st.paused ? 'paused' : st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running',
+      paused: !!st.paused,
     });
   }
   return out;
@@ -1012,7 +1013,9 @@ function liveSummary(ctx) {
   const { st, live, now } = ctx;
   return {
     running: !!st.running,
-    state: st.running ? (st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running') : live.endedAt ? 'ended' : 'stopped',
+    state: st.running ? (st.paused ? 'paused' : st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running') : live.endedAt ? 'ended' : 'stopped',
+    paused: !!st.paused,
+    paused_for_sec: st.paused ? Math.round(st.pausedFor) : 0,
     current_id: st.running ? st.current.id : null,
     next_id: st.running ? st.next?.id ?? null : null,
     started_at: st.running ? new Date(st.startedAt).toISOString() : null,
@@ -1065,7 +1068,8 @@ function companionStatus(rd) {
   return {
     rundown: rd.title,
     running: !!st.running,
-    state: st.running ? (st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running') : 'stopped',
+    state: st.running ? (st.paused ? 'paused' : st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running') : 'stopped',
+    paused: !!st.paused,
     cue_id: st.running ? st.current.id : null,
     title: st.running ? st.current.title : '',
     description: st.running ? st.current.description : '',
@@ -1091,7 +1095,7 @@ function companionStatus(rd) {
 
 const needTime = (v) => { if (v == null) fail(400, 'Zeitangabe fehlt: seconds=…, minutes=… oder time=mm:ss'); return v; };
 const COMPANION_ACTIONS = {
-  start: ['start', (q) => ({ itemId: q.item ?? q.itemId })], next: ['next'], prev: ['prev'], back: ['prev'], stop: ['stop'], reset: ['reset'],
+  start: ['start', (q) => ({ itemId: q.item ?? q.itemId })], pause: ['pause'], resume: ['resume'], toggle: ['toggle'], playpause: ['toggle'], next: ['next'], prev: ['prev'], back: ['prev'], stop: ['stop'], reset: ['reset'],
   plus: ['adjust', (q) => ({ seconds: Math.abs(readSeconds(q) ?? 60) })],
   minus: ['adjust', (q) => ({ seconds: -Math.abs(readSeconds(q) ?? 60) })],
   add: ['adjust', (q) => ({ seconds: needTime(readSeconds(q)) })], // vorzeichenbehaftet, z. B. seconds=-30
