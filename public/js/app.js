@@ -357,6 +357,7 @@ async function viewRundowns() {
   const actionsMenu = (anchor, r) => menu(anchor, [
     { label: 'Öffnen', icon: 'edit', onClick: () => go('#/rundown/' + r.id) },
     { label: 'Live-Ansicht', icon: 'external', onClick: () => window.open('/live/' + r.id, '_blank') },
+    { label: 'Drucken / PDF', icon: 'printer', onClick: () => window.open('/print/' + r.id, '_blank') },
     ...(canCreate() ? [{ label: 'Duplizieren', icon: 'copy', onClick: async () => { const d = await api('POST', `/api/rundowns/${r.id}/duplicate`); toast('Rundown dupliziert', 'ok'); go('#/rundown/' + d.id); } }] : []),
     ...(can('admin') ? [{ label: 'Freigaben …', icon: 'lock', onClick: () => accessModal(r) }] : []),
     ...(rank(r.my_role) >= rank('editor') ? [
@@ -1065,6 +1066,7 @@ function buildRundownPage() {
     h('button', { class: 'btn', title: 'Timer in neuem Fenster öffnen', onclick: () => window.open(S.publicToken ? `/timer/p/${encodeURIComponent(S.publicToken)}` : `/timer/${rd.id}`, '_blank') }, icon('timer'), h('span', { class: 'lbl' }, 'Timer')),
     h('button', { class: 'btn', onclick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${rd.id}`, '_blank') }, icon('external'), h('span', { class: 'lbl' }, 'Live-Ansicht')),
     h('button', { class: 'btn', onclick: (e) => viewMenu(e.currentTarget) }, icon('eye'), h('span', { class: 'lbl' }, 'Ansicht')),
+    h('button', { class: 'btn', title: 'Drucken / PDF (Strg+P)', onclick: () => openPrint() }, icon('printer'), h('span', { class: 'lbl' }, 'Drucken')),
     !S.publicToken ? h('button', { class: 'btn', onclick: publicLinkModal }, icon('share'), h('span', { class: 'lbl' }, 'Öffentlicher Link')) : null,
     can('editor') ? h('button', { class: 'btn', onclick: apiModal }, icon('code'), h('span', { class: 'lbl' }, 'API')) : null,
     can('admin') && !S.publicToken ? h('button', { class: 'btn', onclick: () => accessModal(rd) }, icon('lock'), h('span', { class: 'lbl' }, 'Freigaben')) : null);
@@ -1709,6 +1711,16 @@ function tick() {
 }
 
 /* ================================================================== Menüs & Dialoge */
+/** Druckansicht in neuem Tab öffnen (optional mit Variante: plan | dept | script) */
+function openPrint(variant, rid = S.rd?.rundown.id) {
+  const base = S.publicToken ? `/print/p/${encodeURIComponent(S.publicToken)}` : `/print/${rid}`;
+  window.open(base + (variant ? `?v=${variant}` : ''), '_blank');
+}
+// Strg+P / Cmd+P im Rundown öffnet die Druckansicht statt den Browser-Druck der Bearbeitungsseite
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && S.rd) { e.preventDefault(); openPrint(); }
+});
+
 function viewMenu(anchor) {
   const items = [];
   if (can('editor')) items.push({ label: S.readMode ? 'Bearbeiten aktivieren' : 'Nur-Lesen-Modus', icon: S.readMode ? 'edit' : 'eye', onClick: () => { S.readMode = !S.readMode; R.sig = null; applyPageClasses(); renderAll(); } });
@@ -1718,6 +1730,10 @@ function viewMenu(anchor) {
     { label: 'Erledigte Punkte ausblenden', icon: S.prefs.hideDone ? 'check' : 'eyeOff', active: S.prefs.hideDone, onClick: () => { S.prefs.hideDone = !S.prefs.hideDone; savePrefs(); applyPageClasses(); } },
     { label: 'Spalten ein-/ausblenden …', icon: 'columns', onClick: columnsModal },
     { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
+  items.push(
+    { label: 'Drucken: Ablaufplan', icon: 'printer', onClick: () => openPrint('plan') },
+    { label: 'Drucken: Abteilungsliste', icon: 'printer', onClick: () => openPrint('dept') },
+    { label: 'Drucken: Moderationsskript', icon: 'printer', onClick: () => openPrint('script') });
   menu(anchor, items);
 }
 
