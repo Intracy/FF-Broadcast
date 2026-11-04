@@ -508,14 +508,14 @@ async function importRundown(rundown = null) {
   });
 }
 
-async function fileMenu(anchor) {
-  const data = () => S.rd;
-  menu(anchor, [
-    ...(canEdit() ? [{ label: 'Importieren (Excel / CSV) …', icon: 'upload', onClick: () => importRundown(S.rd) }] : []),
-    { label: 'Export als Excel (.xlsx)', icon: 'download', onClick: async () => (await importer()).exportXlsx(data()) },
-    { label: 'Export als CSV', icon: 'download', onClick: async () => (await importer()).exportCsv(data()) },
-    { label: 'Import-Vorlage herunterladen', icon: 'list', onClick: async () => (await importer()).downloadTemplate() },
-  ]);
+/** Import/Export-Einträge für das Mehr-Menü (Import nur, wer bearbeiten darf) */
+function fileMenuItems() {
+  return [
+    canEdit() ? { label: 'Importieren (Excel / CSV) …', icon: 'upload', onClick: () => importRundown(S.rd) } : null,
+    { label: 'Export als Excel (.xlsx)', icon: 'download', onClick: async () => (await importer()).exportXlsx(S.rd) },
+    { label: 'Export als CSV', icon: 'download', onClick: async () => (await importer()).exportCsv(S.rd) },
+    canEdit() ? { label: 'Import-Vorlage herunterladen', icon: 'list', onClick: async () => (await importer()).downloadTemplate() } : null,
+  ];
 }
 
 function newRundown() {
@@ -1131,23 +1131,19 @@ function buildRundownPage() {
   R.total = h('b', { style: { fontWeight: 500 } });
   R.end = h('span');
 
+  // Kopfleiste: Ausgabe ▾ · Teilen ▾ · Verlauf · Mehr ⋯ (auf dem Handy alles im Mehr-Menü)
+  const shareItems = shareMenuItems();
   const headActions = h('div', { class: 'rd-head-actions' },
-    h('button', { class: 'btn', title: 'Prompter in neuem Fenster öffnen', onclick: () => window.open(S.publicToken ? `/prompter/p/${encodeURIComponent(S.publicToken)}` : `/prompter/${rd.id}`, '_blank') }, icon('prompter'), h('span', { class: 'lbl' }, 'Prompter')),
-    h('button', { class: 'btn', title: 'Timer in neuem Fenster öffnen', onclick: () => window.open(S.publicToken ? `/timer/p/${encodeURIComponent(S.publicToken)}` : `/timer/${rd.id}`, '_blank') }, icon('timer'), h('span', { class: 'lbl' }, 'Timer')),
-    h('button', { class: 'btn', onclick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${rd.id}`, '_blank') }, icon('external'), h('span', { class: 'lbl' }, 'Live-Ansicht')),
-    h('button', { class: 'btn', onclick: (e) => viewMenu(e.currentTarget) }, icon('eye'), h('span', { class: 'lbl' }, 'Ansicht')),
-    h('button', { class: 'btn', title: 'Drucken / PDF (Strg+P)', onclick: () => openPrint() }, icon('printer'), h('span', { class: 'lbl' }, 'Drucken')),
-    !S.publicToken ? h('button', { class: 'btn', onclick: publicLinkModal }, icon('share'), h('span', { class: 'lbl' }, 'Öffentlicher Link')) : null,
-    can('editor') ? h('button', { class: 'btn', onclick: apiModal }, icon('code'), h('span', { class: 'lbl' }, 'API')) : null,
-    can('editor') ? h('button', { class: 'btn hx-btn', title: 'Änderungsverlauf (wer hat was geändert, rückgängig machen)', onclick: toggleHistory }, icon('history'), h('span', { class: 'lbl' }, 'Verlauf')) : null,
-    can('admin') && !S.publicToken ? h('button', { class: 'btn', onclick: () => accessModal(rd) }, icon('lock'), h('span', { class: 'lbl' }, 'Freigaben')) : null);
+    h('button', { class: 'btn hd-wide', title: 'Live-Ansicht, Prompter oder Timer in neuem Fenster öffnen', onclick: (e) => menu(e.currentTarget, outputMenuItems()) }, icon('monitor'), h('span', { class: 'lbl' }, 'Ausgabe'), icon('chevronDown', 'caret')),
+    shareItems.length ? h('button', { class: 'btn hd-wide', title: 'Öffentlicher Link, Freigaben und API', onclick: (e) => menu(e.currentTarget, shareMenuItems()) }, icon('share'), h('span', { class: 'lbl' }, 'Teilen'), icon('chevronDown', 'caret')) : null,
+    can('editor') ? h('button', { class: 'btn icon-only hd-wide hx-btn', title: 'Verlauf – wer hat was geändert, rückgängig machen', 'aria-label': 'Verlauf', onclick: toggleHistory }, icon('history')) : null,
+    h('button', { class: 'btn icon-only hd-more', title: 'Mehr: Ansicht, Drucken, Import/Export', 'aria-label': 'Mehr', onclick: (e) => moreMenu(e.currentTarget) }, icon('more')));
 
   R.toolbar = h('div', { class: 'toolbar' },
     h('button', { class: 'btn', onclick: () => addItem('item') }, icon('plus'), 'Programmpunkt'),
     h('button', { class: 'btn ghost', onclick: () => addItem('block') }, icon('folderPlus'), 'Block'),
     h('button', { class: 'btn ghost', onclick: () => addItem('block_end') }, icon('minus'), 'Block-Ende'),
-    h('button', { class: 'btn ghost', onclick: columnsModal }, icon('columns'), 'Spalten'),
-    h('button', { class: 'btn ghost', title: 'Import aus Excel/CSV und Export', onclick: (e) => fileMenu(e.currentTarget) }, icon('upload'), 'Import / Export'));
+    h('button', { class: 'btn ghost', onclick: columnsModal }, icon('columns'), 'Spalten'));
 
   R.grid = h('div', { class: 'rd-grid' });
   R.header = h('div', { class: 'row rd-header' });
@@ -1802,11 +1798,50 @@ function viewMenu(anchor) {
     { label: 'Erledigte Punkte ausblenden', icon: S.prefs.hideDone ? 'check' : 'eyeOff', active: S.prefs.hideDone, onClick: () => { S.prefs.hideDone = !S.prefs.hideDone; savePrefs(); applyPageClasses(); } },
     { label: 'Spalten ein-/ausblenden …', icon: 'columns', onClick: columnsModal },
     { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
-  items.push(
-    { label: 'Drucken: Ablaufplan', icon: 'printer', onClick: () => openPrint('plan') },
-    { label: 'Drucken: Abteilungsliste', icon: 'printer', onClick: () => openPrint('dept') },
-    { label: 'Drucken: Moderationsskript', icon: 'printer', onClick: () => openPrint('script') });
+  if (!anchor) return items;
   menu(anchor, items);
+}
+
+/* ---------- Kopfleiste im Rundown */
+const outLink = (kind) => (S.publicToken ? `/${kind}/p/${encodeURIComponent(S.publicToken)}` : `/${kind}/${S.rd.rundown.id}`);
+function outputMenuItems() {
+  return [
+    { label: 'Live-Ansicht', sub: 'Vollbild für Regie und Bildschirme', icon: 'external', onClick: () => window.open(outLink('live'), '_blank') },
+    { label: 'Prompter', sub: 'Skript für die Moderation', icon: 'prompter', onClick: () => window.open(outLink('prompter'), '_blank') },
+    { label: 'Timer', sub: 'Countdown für die Bühne', icon: 'timer', onClick: () => window.open(outLink('timer'), '_blank') },
+  ];
+}
+/** Teilen & Zugriff – nur, was die eigene Rolle auch darf */
+function shareMenuItems() {
+  if (S.publicToken) return [];
+  return [
+    can('editor') || S.rd?.rundown.public_enabled ? { label: 'Öffentlicher Link …', sub: 'Nur-Lesen-Link, Live-Ansicht, QR-Code', icon: 'globe', onClick: publicLinkModal } : null,
+    can('admin') ? { label: 'Freigaben …', sub: 'Wer darf diesen Rundown sehen/bearbeiten', icon: 'lock', onClick: () => accessModal(S.rd.rundown) } : null,
+    can('editor') ? { label: 'API & Companion …', sub: 'Steuerung von außen (Stream Deck, Skripte)', icon: 'code', onClick: apiModal } : null,
+  ].filter(Boolean);
+}
+function printMenuItems() {
+  return [
+    { label: 'Ablaufplan', icon: 'printer', onClick: () => openPrint('plan') },
+    { label: 'Abteilungsliste', icon: 'printer', onClick: () => openPrint('dept') },
+    { label: 'Moderationsskript', icon: 'printer', onClick: () => openPrint('script') },
+  ];
+}
+const isNarrow = () => window.matchMedia('(max-width: 760px)').matches;
+/** Mehr-Menü: Ansicht, Drucken, Import/Export – auf schmalen Bildschirmen zusätzlich Ausgabe, Teilen und Verlauf */
+function moreMenu(anchor) {
+  const narrow = isNarrow();
+  const share = shareMenuItems();
+  menu(anchor, [
+    ...(narrow ? [
+      { section: 'Ausgabe' }, ...outputMenuItems(),
+      ...(share.length ? [{ section: 'Teilen' }, ...share] : []),
+      ...(can('editor') ? [{ section: 'Verlauf' }, { label: 'Änderungsverlauf', icon: 'history', onClick: toggleHistory }] : []),
+    ] : []),
+    { section: 'Ansicht' }, ...viewMenu(null).filter((it) => it.label !== 'Live-Ansicht im Vollbild'), // steht schon unter Ausgabe
+    { section: 'Drucken / PDF' }, ...printMenuItems(),
+    { section: 'Import / Export' }, ...fileMenuItems(),
+  ]);
 }
 
 function columnsModal() {

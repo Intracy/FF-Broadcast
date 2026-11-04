@@ -188,8 +188,14 @@ export function popover(anchor, content) {
   return pop;
 }
 
+/** Menü: Einträge {label, icon, onClick, active, sub} · Zwischenüberschrift {section} · Trennlinie {sep} */
 export function menu(anchor, items) {
-  return popover(anchor, items.map((it) => h('button', { class: 'mi' + (it.active ? ' active' : ''), onclick: () => { closePop(); it.onClick(); } }, it.icon ? icon(it.icon) : null, it.label)));
+  const list = items.filter(Boolean).filter((it, i, arr) => !it.section || (arr[i + 1] && !arr[i + 1].section && !arr[i + 1].sep));
+  return popover(anchor, list.map((it) => it.section ? h('div', { class: 'mi-sec' }, it.section)
+    : it.sep ? h('div', { class: 'mi-sep' })
+    : h('button', { class: 'mi' + (it.active ? ' active' : '') + (it.sub ? ' has-sub' : ''), onclick: () => { closePop(); it.onClick(); } },
+      it.icon ? icon(it.icon) : null,
+      it.sub ? h('span', { class: 'mi-txt' }, h('span', null, it.label), h('small', null, it.sub)) : it.label)));
 }
 
 export async function copyText(text) {

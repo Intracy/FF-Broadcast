@@ -159,6 +159,24 @@ textarea.input { height: auto; padding: 10px 14px; resize: vertical; }
 .rd-meta .stat { display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
 .rd-meta .stat .ico { width: 18px; height: 18px; }
 .rd-head-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.rd-head-actions .btn.hd-wide span.lbl { display: inline; }
+.rd-head-actions .btn .caret { width: 14px; height: 14px; margin-left: -3px; opacity: .6; }
+.rd-head-actions .btn.icon-only { width: 40px; padding: 0 !important; justify-content: center; }
+.rd-head-actions .btn.hx-btn.active { background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+/* Menüs mit Zwischenüberschriften und Beschreibung */
+.pop { max-height: calc(100vh - 20px); overflow-y: auto; }
+.pop .mi-sec { padding: 10px 11px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.pop .mi-sec:first-child { padding-top: 5px; }
+.pop .mi-sep { height: 1px; margin: 5px 6px; background: var(--border); }
+.pop .mi.has-sub { align-items: flex-start; }
+.pop .mi.has-sub .ico { margin-top: 2px; }
+.pop .mi-txt { display: grid; gap: 1px; }
+.pop .mi-txt small { font-size: 12px; color: var(--muted); font-weight: 400; }
+/* Handy/schmal: alles im Mehr-Menü */
+@media (max-width: 760px) {
+  .rd-head-actions .btn.hd-wide { display: none; }
+  .rd-head-actions .btn.hd-more { width: 44px; height: 44px; }
+}
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 30px; }
 
 /* ---------- Live-Steuerung */
