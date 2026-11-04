@@ -746,6 +746,62 @@ POST('/api/rundowns/:id/columns/reorder', needRd('editor'), (req) => {
   return payload(Q.rdById.get(rd.id));
 });
 
+// ---------- Import (Excel/CSV) – Zeilen werden im Browser eingelesen und hier in einem Rutsch gespeichert
+const IMPORT_MAX = 5000;
+function importRows(rid, body) {
+  const rows = Array.isArray(body.items) ? body.items : [];
+  if (!rows.length) fail(400, 'Keine Zeilen zum Importieren');
+  if (rows.length > IMPORT_MAX) fail(400, `Zu viele Zeilen (höchstens ${IMPORT_MAX})`);
+  const colIds = new Map(Q.colsByRd.all(rid).map((c) => [c.name.trim().toLowerCase(), c.id]));
+  let pos = Q.itemsByRd.all(rid).length, newCols = 0;
+  const colId = (name) => {
+    const n = String(name || '').trim().slice(0, 60);
+    if (!n) return null;
+    const k = n.toLowerCase();
+    if (!colIds.has(k)) { colIds.set(k, Number(Q.insertCol.run(rid, n, colIds.size, 1).lastInsertRowid)); newCols++; }
+    return colIds.get(k);
+  };
+  for (const n of Array.isArray(body.columns) ? body.columns : []) colId(n);
+  let added = 0;
+  for (const r of rows) {
+    const type = ['item', 'block', 'block_end'].includes(r?.type) ? r.type : 'item';
+    const cells = {};
+    if (r.cells && typeof r.cells === 'object') {
+      for (const [name, v] of Object.entries(r.cells)) {
+        const val = String(v ?? '').slice(0, 10000);
+        const id = val ? colId(name) : null;
+        if (id) cells[id] = val;
+      }
+    }
+    const dur = type === 'item' ? Math.max(0, Math.min(24 * 3600, parseInt(r.duration, 10) || 0)) : 0;
+    const color = COLOR_RE.test(r.color || '') ? r.color || '' : '';
+    const nid = Q.insertItem.run(rid, pos++, type, String(r.title ?? '').slice(0, 2000), String(r.description ?? '').slice(0, 10000), dur, color, JSON.stringify(cells)).lastInsertRowid;
+    if (r.script) Q.setItemScript.run(String(r.script).slice(0, 50000), nid);
+    added++;
+  }
+  return { added, newColumns: newCols };
+}
+
+POST('/api/rundowns/import', needCreator, (req) => {
+  const { title, event_date, start_time } = req.body.rundown || {};
+  if (!String(title || '').trim()) fail(400, 'Bitte einen Titel angeben');
+  if (event_date && !DATE_RE.test(event_date)) fail(400, 'Ungültiges Datum');
+  if (start_time && !TIME_RE.test(start_time)) fail(400, 'Ungültige Startzeit');
+  const res = tx(() => {
+    const rid = Number(Q.insertRd.run(String(title).trim().slice(0, 200), event_date || null, start_time || '10:00', randomToken(), randomToken(24), req.user.id).lastInsertRowid);
+    return { id: rid, ...importRows(rid, req.body) };
+  });
+  broadcastLobby();
+  return res;
+});
+
+POST('/api/rundowns/:id/import', needRd('editor'), (req) => {
+  const rd = getRundown(req.params.id);
+  const res = tx(() => importRows(rd.id, req.body));
+  changed(rd.id, req);
+  return { id: rd.id, ...res, ...payload(Q.rdById.get(rd.id)) };
+});
+
 // ---------- Öffentlicher Link & Companion-Token
 POST('/api/rundowns/:id/public', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);

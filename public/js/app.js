@@ -347,7 +347,9 @@ async function viewRundowns() {
   shell('rundowns', h('div', { class: 'page ov-page' },
     h('div', { class: 'page-head' },
       h('div', null, h('div', { class: 'label' }, 'Übersicht'), h('h1', null, 'Rundowns'), sub),
-      canCreate() ? h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown') : null),
+      canCreate() ? h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+        h('button', { class: 'btn', title: 'Rundown aus Excel- oder CSV-Datei anlegen', onclick: () => importRundown() }, icon('upload'), h('span', { class: 'lbl' }, 'Importieren')),
+        h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown')) : null),
     h('div', { class: 'ov-tools' },
       h('div', { class: 'search' }, icon('search'), search),
       chips,
@@ -359,6 +361,8 @@ async function viewRundowns() {
     { label: 'Live-Ansicht', icon: 'external', onClick: () => window.open('/live/' + r.id, '_blank') },
     ...(canCreate() ? [{ label: 'Duplizieren', icon: 'copy', onClick: async () => { const d = await api('POST', `/api/rundowns/${r.id}/duplicate`); toast('Rundown dupliziert', 'ok'); go('#/rundown/' + d.id); } }] : []),
     ...(can('admin') ? [{ label: 'Freigaben …', icon: 'lock', onClick: () => accessModal(r) }] : []),
+    { label: 'Export als Excel', icon: 'download', onClick: async () => (await importer()).exportXlsx(await api('GET', '/api/rundowns/' + r.id)) },
+    { label: 'Export als CSV', icon: 'download', onClick: async () => (await importer()).exportCsv(await api('GET', '/api/rundowns/' + r.id)) },
     ...(rank(r.my_role) >= rank('editor') ? [
       { label: 'Löschen', icon: 'trash', onClick: async () => { if (await confirmDialog(`„${r.title}“ wird mit allen Programmpunkten gelöscht.`, { title: 'Rundown löschen?' })) { await api('DELETE', '/api/rundowns/' + r.id); toast('Gelöscht', 'ok'); load(); } } },
     ] : []),
@@ -465,6 +469,30 @@ async function viewRundowns() {
   const load = async () => { rds = await api('GET', '/api/rundowns'); fetchedAt = Date.now(); draw(); };
   await load();
   connect({ view: 'overview' }, { rundowns: debounce(load, 200), reconnect: load, access: async () => { const st = await api('GET', '/api/auth/status').catch(() => null); if (st?.user) S.user = st.user; router(); } });
+}
+
+/* ---------- Import / Export (Modul wird erst bei Bedarf geladen) */
+const importer = () => import('/js/importer.js');
+
+async function importRundown(rundown = null) {
+  const m = await importer();
+  m.openImport({
+    api, rundown, canCreate: canCreate(),
+    onDone: (r) => {
+      if (r.mode === 'new') go('#/rundown/' + r.id);
+      else if (r.rundown) applyPayload(r);
+    },
+  });
+}
+
+async function fileMenu(anchor) {
+  const data = () => S.rd;
+  menu(anchor, [
+    ...(canEdit() ? [{ label: 'Importieren (Excel / CSV) …', icon: 'upload', onClick: () => importRundown(S.rd) }] : []),
+    { label: 'Export als Excel (.xlsx)', icon: 'download', onClick: async () => (await importer()).exportXlsx(data()) },
+    { label: 'Export als CSV', icon: 'download', onClick: async () => (await importer()).exportCsv(data()) },
+    { label: 'Import-Vorlage herunterladen', icon: 'list', onClick: async () => (await importer()).downloadTemplate() },
+  ]);
 }
 
 function newRundown() {
@@ -1073,7 +1101,8 @@ function buildRundownPage() {
     h('button', { class: 'btn', onclick: () => addItem('item') }, icon('plus'), 'Programmpunkt'),
     h('button', { class: 'btn ghost', onclick: () => addItem('block') }, icon('folderPlus'), 'Block'),
     h('button', { class: 'btn ghost', onclick: () => addItem('block_end') }, icon('minus'), 'Block-Ende'),
-    h('button', { class: 'btn ghost', onclick: columnsModal }, icon('columns'), 'Spalten'));
+    h('button', { class: 'btn ghost', onclick: columnsModal }, icon('columns'), 'Spalten'),
+    h('button', { class: 'btn ghost', title: 'Import aus Excel/CSV und Export', onclick: (e) => fileMenu(e.currentTarget) }, icon('upload'), 'Import / Export'));
 
   R.grid = h('div', { class: 'rd-grid' });
   R.header = h('div', { class: 'row rd-header' });
