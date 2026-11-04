@@ -97,6 +97,14 @@ h2 { font-family: var(--font-cond); font-weight: 700; text-transform: uppercase;
 .btn.primary:hover { background: #7c4ff0; }
 .btn.green { background: var(--green); color: #04130a; }
 .btn.green:hover { background: #2dd468; }
+.btn.pause-btn { background: var(--yellow); color: #1a1500; border-color: transparent !important; }
+.btn.pause-btn:hover { background: #fde047; }
+.btn .ico-slot { display: contents; }
+.btn.pulse { animation: btnpulse 1.4s ease-in-out infinite; }
+@keyframes btnpulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--green) 30%, transparent); } }
+.live-bar.is-paused { border-color: color-mix(in srgb, var(--yellow) 55%, transparent) !important; }
+.live-bar.is-paused .live-now { color: var(--yellow); }
+.live-bar.is-paused .progress > * { background: var(--yellow) !important; }
 .btn.red { background: var(--red); color: #fff; }
 .btn.red:hover { background: #f25a5a; }
 .btn.danger { color: var(--red-text); }
@@ -581,6 +589,9 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
   .live-bar .live-row .next-btn, .live-bar .live-row .btn.green { flex: 1; justify-content: center; }
   .live-bar .live-row .next-btn .lbl, .live-bar .live-row .btn.green .lbl { display: inline; }
   .live-bar .live-row .next-btn { background: var(--accent); color: #fff; }
+  .live-bar .live-row .next-btn.green { background: var(--green); color: #04130a; }
+  .live-bar .live-row .btn.pause-btn { flex: 1; justify-content: center; }
+  .live-bar .live-row .btn.pause-btn .lbl { display: inline; }
   .toasts { bottom: 200px; }
 }
 @media (max-width: 760px) {

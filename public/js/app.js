@@ -1579,7 +1579,13 @@ function buildLiveBar() {
   L.now = h('b', null, '–');
   L.next = h('b', null, '–');
   L.prog = h('div', { class: 'progress' }, h('span'));
-  L.start = h('button', { class: 'btn green', onclick: () => liveAction('start') }, icon('skipFwd'), h('span', { class: 'lbl' }, 'Start'));
+  // Start-Knopf wird im Live-Betrieb zu Pause bzw. Fortsetzen
+  L.startIco = h('span', { class: 'ico-slot' }, icon('skipFwd'));
+  L.startLbl = h('span', { class: 'lbl' }, 'Start');
+  L.start = h('button', { class: 'btn green start-btn', onclick: () => {
+    const lv = S.rd.live || {};
+    liveAction(!lv.running ? 'start' : lv.pausedAt ? 'resume' : 'pause');
+  } }, L.startIco, L.startLbl);
   L.prev = h('button', { class: 'btn', onclick: () => liveAction('prev') }, icon('skipBack'), h('span', { class: 'lbl' }, 'Zurück'));
   L.nextBtn = h('button', { class: 'btn next-btn', onclick: () => liveAction('next') }, icon('play'), h('span', { class: 'lbl' }, 'Weiter'));
   L.stop = h('button', { class: 'btn red', onclick: async () => { if (await confirmDialog('Live-Modus beenden? Die gemessenen Zeiten bleiben sichtbar.', { okLabel: 'Beenden', title: 'Live beenden' })) liveAction('stop'); } }, icon('square'), h('span', { class: 'lbl' }, 'Beenden'));
@@ -1732,8 +1738,22 @@ function tick() {
       L.prog.firstChild.style.width = '0';
       L.prog.className = 'progress';
     }
+    L.bar?.classList.toggle('is-paused', !!st.paused);
+    if (st.running && st.paused) L.now.textContent = '⏸ PAUSE · ' + L.now.textContent;
     if (L.start) {
-      L.start.disabled = st.running || !play.length;
+      const mode = !st.running ? 'start' : st.paused ? 'resume' : 'pause';
+      if (L.start.dataset.mode !== mode) {
+        L.start.dataset.mode = mode;
+        L.startIco.replaceChildren(icon(mode === 'pause' ? 'pause' : mode === 'resume' ? 'play' : 'skipFwd'));
+        L.startLbl.textContent = mode === 'pause' ? 'Pause' : mode === 'resume' ? 'Fortsetzen' : 'Start';
+        L.start.title = mode === 'pause' ? 'Zeit anhalten (Pause)' : mode === 'resume' ? 'Pause beenden – Zeit läuft weiter' : 'Live starten';
+        L.start.classList.toggle('green', mode !== 'pause');
+        L.start.classList.toggle('pause-btn', mode === 'pause');
+        L.start.classList.toggle('pulse', mode === 'resume');
+        // Läuft die Show, wird „Weiter“ zum Hauptknopf (grün)
+        L.nextBtn.classList.toggle('green', mode === 'pause');
+      }
+      L.start.disabled = !play.length;
       L.prev.disabled = L.stop.disabled = !st.running;
       L.nextBtn.disabled = !play.length;
       (L.adjust || []).forEach((b) => (b.disabled = !st.running));
@@ -2038,7 +2058,10 @@ async function apiModal() {
     if (tab === 'control') {
       content = h('div', { class: 'ep-list' },
         h('div', { class: 'ep-group' }, 'Ablauf'),
-        ep('POST', '/start', 'Start', 'Startet beim ersten Punkt (optional ?item=ID)'),
+        ep('POST', '/start', 'Start', 'Startet beim ersten Punkt (optional ?item=ID); in der Pause: fortsetzen'),
+        ep('POST', '/pause', 'Pause', 'Hält die Zeit des laufenden Punkts an'),
+        ep('POST', '/resume', 'Fortsetzen', 'Pause beenden, Zeit läuft weiter'),
+        ep('POST', '/toggle', 'Start/Pause', 'Ein Knopf für alles: startet, pausiert oder setzt fort (ideal fürs Stream Deck)'),
         ep('POST', '/next', 'Weiter', 'Nächster Punkt – startet, falls noch nicht live'),
         ep('POST', '/prev', 'Zurück', 'Vorheriger Punkt'),
         ep('POST', '/goto?item=ID', 'Springen', 'Direkt zu einem Punkt (IDs unter „Punkte“)'),
