@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR } from './db.js';
+import * as hist from './history.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can, rank } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
 import * as backup from './backup.js';
@@ -607,7 +608,9 @@ PATCH('/api/rundowns/:id', needRd('editor'), (req) => {
   if (title !== undefined) { if (!String(title).trim()) fail(400, 'Titel darf nicht leer sein'); upd.title = String(title).trim(); }
   if (event_date !== undefined) { if (!DATE_RE.test(event_date || '')) fail(400, 'Ungültiges Datum'); upd.event_date = event_date || null; }
   if (start_time !== undefined) { if (!TIME_RE.test(start_time)) fail(400, 'Ungültige Startzeit'); upd.start_time = start_time; }
+  const d = hist.fieldDiff(rd, upd, ['title', 'event_date', 'start_time']);
   updateRow('rundowns', rd.id, upd, ['title', 'event_date', 'start_time']);
+  if (d) hist.record(rd.id, req.user, 'rd.edit', upd.title || rd.title, [{ t: 'rd', ...d }], 'rd:' + Object.keys(d.a).sort().join());
   changed(rd.id, req);
   return payload(Q.rdById.get(rd.id));
 });
@@ -655,6 +658,8 @@ POST('/api/rundowns/:id/items', needRd('editor'), (req) => {
     const at = afterId != null ? ids.indexOf(Number(afterId)) : -1;
     if (at >= 0) ids.splice(at + 1, 0, newId); else ids.push(newId);
     resequence(rd.id, ids);
+    const it = Q.itemById.get(newId);
+    hist.record(rd.id, req.user, type === 'item' ? 'item.add' : type === 'block' ? 'block.add' : 'blockend.add', it.title, [{ t: 'item', id: newId, b: null, a: hist.itemFull(it) }]);
   });
   changed(rd.id, req);
   return { id: newId, ...payload(Q.rdById.get(rd.id)) };
@@ -665,10 +670,26 @@ POST('/api/rundowns/:id/reorder', needRd('editor'), (req) => {
   const current = new Set(Q.itemsByRd.all(rd.id).map((i) => i.id));
   const ids = (req.body.ids || []).map(Number).filter((id) => current.has(id));
   if (ids.length !== current.size) fail(400, 'Reihenfolge unvollständig – bitte neu laden');
+  const before = [...current];
   tx(() => resequence(rd.id, ids));
+  if (before.join() !== ids.join()) {
+    const moved = ids.reduce((best, id, i) => (Math.abs(i - before.indexOf(id)) > Math.abs(ids.indexOf(best) - before.indexOf(best)) ? id : best), ids[0]);
+    hist.record(rd.id, req.user, 'order', Q.itemById.get(moved)?.title || '', [{ t: 'order', b: before, a: ids }], 'order');
+  }
   changed(rd.id, req);
   return payload(Q.rdById.get(rd.id));
 });
+
+/** Wird der laufende Punkt gelöscht, springt Live zum nächsten */
+function skipLiveIfCurrent(rid, itemId) {
+  const rd = Q.rdById.get(rid);
+  const live = parseLive(rd.live);
+  if (live.running && live.currentId === itemId) {
+    const nl = applyLiveAction(loadItems(rd.id), live, 'next');
+    Q.setLive.run(JSON.stringify(nl), rd.id);
+  }
+}
+hist.setHooks({ beforeDeleteItem: skipLiveIfCurrent });
 
 function getItem(id) {
   const it = Q.itemById.get(Number(id));
@@ -690,20 +711,19 @@ PATCH('/api/items/:id', needRd('editor', ridOfItem), (req) => {
     for (const [k, v] of Object.entries(cells)) merged[k] = String(v ?? '').slice(0, 10000);
     upd.cells = JSON.stringify(merged);
   }
+  const d = hist.itemDiff(it, upd);
   updateRow('items', it.id, upd, ['title', 'description', 'script', 'duration', 'color', 'cells']);
+  if (d) hist.record(it.rundown_id, req.user, 'item.edit', upd.title ?? it.title, [{ t: 'item', id: it.id, ...d }], `item:${it.id}:${[...Object.keys(d.a).filter((k) => k !== 'cells'), ...Object.keys(d.a.cells || {}).map((k) => 'c' + k)].sort().join()}`);
   changed(it.rundown_id, req);
   return { ok: true, item: itemOut(Q.itemById.get(it.id)) };
 });
 
 DELETE('/api/items/:id', needRd('editor', ridOfItem), (req) => {
   const it = getItem(req.params.id);
-  const rd = Q.rdById.get(it.rundown_id);
-  const live = parseLive(rd.live);
-  if (live.running && live.currentId === it.id) {
-    const nl = applyLiveAction(loadItems(rd.id), live, 'next');
-    Q.setLive.run(JSON.stringify(nl), rd.id);
-  }
+  const full = hist.itemFull(it);
+  skipLiveIfCurrent(it.rundown_id, it.id);
   Q.deleteItem.run(it.id);
+  hist.record(it.rundown_id, req.user, it.type === 'item' ? 'item.del' : it.type === 'block' ? 'block.del' : 'blockend.del', it.title, [{ t: 'item', id: it.id, b: full, a: null }]);
   changed(it.rundown_id, req);
   broadcastLive(it.rundown_id);
   return payload(Q.rdById.get(it.rundown_id));
@@ -715,7 +735,8 @@ POST('/api/rundowns/:id/columns', needRd('editor'), (req) => {
   const name = String(req.body.name || '').trim();
   if (!name) fail(400, 'Bitte Spaltennamen angeben');
   const pos = Q.colsByRd.all(rd.id).length;
-  Q.insertCol.run(rd.id, name.slice(0, 60), pos, req.body.is_public === false ? 0 : 1);
+  const cid = Number(Q.insertCol.run(rd.id, name.slice(0, 60), pos, req.body.is_public === false ? 0 : 1).lastInsertRowid);
+  hist.record(rd.id, req.user, 'col.add', name.slice(0, 60), [{ t: 'col', id: cid, b: null, a: hist.colFull(Q.colById.get(cid)) }]);
   changed(rd.id, req);
   return payload(Q.rdById.get(rd.id));
 });
@@ -726,7 +747,9 @@ PATCH('/api/columns/:id', needRd('editor', ridOfColumn), (req) => {
   const upd = {};
   if (req.body.name !== undefined) { const n = String(req.body.name).trim(); if (!n) fail(400, 'Name darf nicht leer sein'); upd.name = n.slice(0, 60); }
   if (req.body.is_public !== undefined) upd.is_public = req.body.is_public ? 1 : 0;
+  const d = hist.fieldDiff(c, upd, ['name', 'is_public']);
   updateRow('columns', c.id, upd, ['name', 'is_public']);
+  if (d) hist.record(c.rundown_id, req.user, 'col.edit', upd.name || c.name, [{ t: 'col', id: c.id, ...d }], `col:${c.id}:${Object.keys(d.a).sort().join()}`);
   changed(c.rundown_id, req);
   return payload(Q.rdById.get(c.rundown_id));
 });
@@ -734,31 +757,37 @@ PATCH('/api/columns/:id', needRd('editor', ridOfColumn), (req) => {
 DELETE('/api/columns/:id', needRd('editor', ridOfColumn), (req) => {
   const c = Q.colById.get(Number(req.params.id));
   if (!c) fail(404, 'Spalte nicht gefunden');
+  const full = hist.colFull(c);
   Q.deleteCol.run(c.id);
+  hist.record(c.rundown_id, req.user, 'col.del', c.name, [{ t: 'col', id: c.id, b: full, a: null }]);
   changed(c.rundown_id, req);
   return payload(Q.rdById.get(c.rundown_id));
 });
 
 POST('/api/rundowns/:id/columns/reorder', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
+  const before = Q.colsByRd.all(rd.id).map((c) => c.id);
   tx(() => (req.body.ids || []).forEach((id, i) => Q.setColPos.run(i, Number(id), rd.id)));
+  const after = Q.colsByRd.all(rd.id).map((c) => c.id);
+  if (before.join() !== after.join()) hist.record(rd.id, req.user, 'col.order', '', [{ t: 'corder', b: before, a: after }], 'corder');
   changed(rd.id, req);
   return payload(Q.rdById.get(rd.id));
 });
 
 // ---------- Import (Excel/CSV) – Zeilen werden im Browser eingelesen und hier in einem Rutsch gespeichert
 const IMPORT_MAX = 5000;
-function importRows(rid, body) {
+function importRows(rid, body, user) {
   const rows = Array.isArray(body.items) ? body.items : [];
   if (!rows.length) fail(400, 'Keine Zeilen zum Importieren');
   if (rows.length > IMPORT_MAX) fail(400, `Zu viele Zeilen (höchstens ${IMPORT_MAX})`);
   const colIds = new Map(Q.colsByRd.all(rid).map((c) => [c.name.trim().toLowerCase(), c.id]));
   let pos = Q.itemsByRd.all(rid).length, newCols = 0;
+  const ops = [];
   const colId = (name) => {
     const n = String(name || '').trim().slice(0, 60);
     if (!n) return null;
     const k = n.toLowerCase();
-    if (!colIds.has(k)) { colIds.set(k, Number(Q.insertCol.run(rid, n, colIds.size, 1).lastInsertRowid)); newCols++; }
+    if (!colIds.has(k)) { const cid = Number(Q.insertCol.run(rid, n, colIds.size, 1).lastInsertRowid); colIds.set(k, cid); newCols++; ops.push({ t: 'col', id: cid, b: null, a: hist.colFull(Q.colById.get(cid)) }); }
     return colIds.get(k);
   };
   for (const n of Array.isArray(body.columns) ? body.columns : []) colId(n);
@@ -777,8 +806,10 @@ function importRows(rid, body) {
     const color = COLOR_RE.test(r.color || '') ? r.color || '' : '';
     const nid = Q.insertItem.run(rid, pos++, type, String(r.title ?? '').slice(0, 2000), String(r.description ?? '').slice(0, 10000), dur, color, JSON.stringify(cells)).lastInsertRowid;
     if (r.script) Q.setItemScript.run(String(r.script).slice(0, 50000), nid);
+    ops.push({ t: 'item', id: Number(nid), b: null, a: { ...hist.itemFull(Q.itemById.get(nid), []), index: pos - 1 } });
     added++;
   }
+  hist.record(rid, user, 'import', `${added} Zeilen`, ops);
   return { added, newColumns: newCols };
 }
 
@@ -789,7 +820,7 @@ POST('/api/rundowns/import', needCreator, (req) => {
   if (start_time && !TIME_RE.test(start_time)) fail(400, 'Ungültige Startzeit');
   const res = tx(() => {
     const rid = Number(Q.insertRd.run(String(title).trim().slice(0, 200), event_date || null, start_time || '10:00', randomToken(), randomToken(24), req.user.id).lastInsertRowid);
-    return { id: rid, ...importRows(rid, req.body) };
+    return { id: rid, ...importRows(rid, req.body, req.user) };
   });
   broadcastLobby();
   return res;
@@ -797,9 +828,52 @@ POST('/api/rundowns/import', needCreator, (req) => {
 
 POST('/api/rundowns/:id/import', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
-  const res = tx(() => importRows(rd.id, req.body));
+  const res = tx(() => importRows(rd.id, req.body, req.user));
   changed(rd.id, req);
   return { id: rd.id, ...res, ...payload(Q.rdById.get(rd.id)) };
+});
+
+// ---------- Änderungsverlauf (nur Editoren und Admins)
+const ridOfChange = (req) => hist.getEntry(req.params.cid)?.rundown_id;
+GET('/api/rundowns/:id/history', needRd('editor'), (req) => hist.list(getRundown(req.params.id).id, { before: Number(req.query.before) || undefined, limit: Math.min(200, Number(req.query.limit) || 80) }));
+
+function afterUndo(rid, req) {
+  changed(rid, req);
+  broadcastLive(rid);
+  return payload(Q.rdById.get(rid));
+}
+function runUndo(entry, req) {
+  try { return hist.undo(entry, req.user, { force: !!req.body.force }); }
+  catch (e) { if (e.conflict) throw Object.assign(new HttpError(409, e.message), { extra: { conflict: e.conflict } }); throw e.status ? new HttpError(e.status, e.message) : e; }
+}
+
+POST('/api/history/:cid/undo', needRd('editor', ridOfChange), (req) => {
+  const entry = hist.getEntry(req.params.cid);
+  const id = runUndo(entry, req);
+  return { id, ...afterUndo(entry.rundown_id, req) };
+});
+
+// Strg+Z / Strg+Umschalt+Z: eigene letzte Änderung rückgängig machen bzw. wiederholen
+POST('/api/rundowns/:id/history/:action', needRd('editor'), (req) => {
+  const rd = getRundown(req.params.id);
+  if (!['undo', 'redo'].includes(req.params.action)) fail(404, 'Unbekannte Aktion');
+  const entry = hist.findOwn(rd.id, req.user.id, req.params.action);
+  if (!entry) return { id: null, nothing: true };
+  const id = runUndo(entry, req);
+  return { id, entry: { kind: entry.kind, target: entry.target }, ...afterUndo(rd.id, req) };
+});
+
+POST('/api/history/:cid/restore', needRd('editor', ridOfChange), (req) => {
+  const entry = hist.getEntry(req.params.cid);
+  const rd = Q.rdById.get(entry.rundown_id);
+  try { backup.create('vor-wiederherstellung', rd.title); } catch (e) { console.error('  Sicherung vor dem Wiederherstellen fehlgeschlagen:', e.message); }
+  const r = hist.restoreBefore(entry, req.user);
+  return { ...r, ...afterUndo(rd.id, req) };
+});
+
+GET('/api/history/settings', need('admin'), () => hist.status());
+PATCH('/api/history/settings', need('admin'), (req) => {
+  try { return hist.setRetention(req.body.retention_days); } catch (e) { fail(400, e.message); }
 });
 
 // ---------- Öffentlicher Link & Companion-Token
@@ -1210,7 +1284,7 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       const status = e.status || 500;
       if (status >= 500) console.error(e);
-      if (!res.headersSent) send(res, status, { error: status >= 500 ? 'Interner Serverfehler' : e.message });
+      if (!res.headersSent) send(res, status, { error: status >= 500 ? 'Interner Serverfehler' : e.message, ...(status < 500 && e.extra ? e.extra : {}) });
       return;
     }
   }

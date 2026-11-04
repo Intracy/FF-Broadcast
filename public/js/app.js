@@ -43,8 +43,9 @@ async function api(method, url, body) {
   try { data = await res.json(); } catch { /* leer */ }
   if (!res.ok) {
     if (res.status === 401 && !url.startsWith('/api/auth') && !S.publicToken) { S.user = null; router(); }
-    throw new Error(data?.error || `Fehler ${res.status}`);
+    throw Object.assign(new Error(data?.error || `Fehler ${res.status}`), { status: res.status, data });
   }
+  if (method !== 'GET' && S.hx && !url.includes('/history')) S.hx.refresh();
   return data;
 }
 
@@ -104,6 +105,7 @@ function teardown() {
   disconnect();
   clearInterval(tickTimer); tickTimer = null;
   closePop();
+  S.hx?.close(); S.hx = null;
   S.rd = null; S.myRole = null; R = {}; S.presence = null; focusSent = 'null';
   $$('.modal-back').forEach((m) => m.remove());
 }
@@ -470,6 +472,26 @@ async function viewRundowns() {
   await load();
   connect({ view: 'overview' }, { rundowns: debounce(load, 200), reconnect: load, access: async () => { const st = await api('GET', '/api/auth/status').catch(() => null); if (st?.user) S.user = st.user; router(); } });
 }
+
+/* ---------- Änderungsverlauf (Modul wird erst bei Bedarf geladen) */
+const verlauf = () => import('/js/verlauf.js');
+const hxCtx = () => ({ api, rd: () => S.rd, applyPayload, flush: flushSaves, onClose: () => { S.hx = null; $('.hx-btn')?.classList.remove('active'); } });
+async function toggleHistory() {
+  if (S.hx) { S.hx.close(); return; }
+  const m = await verlauf();
+  S.hx = m.openPanel(hxCtx());
+  $('.hx-btn')?.classList.add('active');
+}
+// Strg+Z / Cmd+Z außerhalb von Eingabefeldern: eigene letzte Änderung rückgängig, mit Umschalt (oder Strg+Y) wiederholen
+window.addEventListener('keydown', async (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || !S.rd || S.publicToken || !canEdit()) return;
+  const k = e.key.toLowerCase();
+  if (k !== 'z' && k !== 'y') return;
+  const t = e.target;
+  if (t.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"], .modal-back')) return;
+  e.preventDefault();
+  (await verlauf()).undoOwn(hxCtx(), k === 'y' || e.shiftKey ? 'redo' : 'undo');
+});
 
 /* ---------- Import / Export (Modul wird erst bei Bedarf geladen) */
 const importer = () => import('/js/importer.js');
@@ -901,8 +923,27 @@ async function viewSystem() {
   const fileIn = h('input', { type: 'file', accept: '.db,application/vnd.sqlite3,application/octet-stream', style: { display: 'none' }, onchange: (e) => upload(e.target.files[0]) });
   const statusBox = h('div', { class: 'bk-status' });
   const listBox = h('div', { class: 'bk-list' });
+  const histBox = h('div', { style: { marginTop: '26px' } });
+  const drawHist = (hs) => fill(histBox,
+    h('div', { class: 'bk-list-head' }, h('h2', null, 'Änderungsverlauf')),
+    h('div', { class: 'card bk-card' },
+      h('div', { class: 'bk-card-top' },
+        h('div', { class: 'bk-ico on' }, icon('history')),
+        h('div', { class: 'bk-title' },
+          h('b', null, 'Verlauf der Rundown-Änderungen'),
+          h('span', null, `Wer hat wann was geändert – Editoren und Admins können Änderungen rückgängig machen. Aktuell ${hs.entries} Einträge${hs.oldest ? ', ältester vom ' + new Date(hs.oldest).toLocaleDateString('de-DE') : ''}.`))),
+      h('div', { class: 'bk-grid' },
+        h('div', null, h('span', null, 'Aufbewahren'),
+          h('select', { class: 'input sort-sel', onchange: async (e) => {
+            const v = Number(e.target.value);
+            if (v && hs.retention_days !== 0 && v < hs.retention_days && !(await confirmDialog(`Einträge, die älter als ${v} Tage sind, werden sofort gelöscht und können nicht mehr rückgängig gemacht werden.`, { title: 'Aufbewahrung verkürzen?', okLabel: 'Verkürzen' }))) { e.target.value = hs.retention_days; return; }
+            try { drawHist(await api('PATCH', '/api/history/settings', { retention_days: v })); toast('Einstellungen gespeichert', 'ok'); } catch (err) { toast(err.message, 'err'); }
+          } }, hs.retentions.map((v) => h('option', { value: v, selected: v === hs.retention_days }, v === 0 ? 'unbegrenzt' : v === 365 ? '1 Jahr' : `${v} Tage`)))),
+        h('div', { class: 'bk-wide' }, h('span', null, 'Hinweis'), h('small', null, 'Ältere Einträge werden automatisch gelöscht. Live-Aktionen (Start, Weiter, ±Zeit) werden nicht aufgezeichnet. Der Verlauf ist Teil der Backups.')))));
+  api('GET', '/api/history/settings').then(drawHist).catch(() => {});
   shell('system', h('div', { class: 'page page-narrow' }, head, fileIn, statusBox,
     h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), h('span', { class: 'muted bk-sum' })), listBox,
+    histBox,
     h('div', { class: 'sec-info', style: { marginTop: '22px' } },
       h('div', null, icon('shield'), h('span', null, h('b', null, 'Backups enthalten alle Daten'), ' inkl. E-Mail-Adressen, Passwort-Hashes, API-Tokens und öffentlicher Links. Heruntergeladene Dateien bitte sicher aufbewahren.')),
       h('div', null, icon('hardDrive'), h('span', null, h('b', null, 'Tipp: '), 'Backups zusätzlich auf einem anderen Datenträger ablegen (USB-Stick, NAS), z. B. mit der Umgebungsvariable ', h('code', null, 'BACKUP_DIR'), ' – fällt die SD-Karte oder Festplatte aus, sind sie sonst mit weg.')))));
@@ -1067,6 +1108,7 @@ function applyPayload(p) {
   S.rd = p;
   S.offset = p.serverNow - Date.now();
   renderAll();
+  S.hx?.refresh();
 }
 
 const item = (id) => S.rd.items.find((i) => i.id === id);
@@ -1095,6 +1137,7 @@ function buildRundownPage() {
     h('button', { class: 'btn', onclick: (e) => viewMenu(e.currentTarget) }, icon('eye'), h('span', { class: 'lbl' }, 'Ansicht')),
     !S.publicToken ? h('button', { class: 'btn', onclick: publicLinkModal }, icon('share'), h('span', { class: 'lbl' }, 'Öffentlicher Link')) : null,
     can('editor') ? h('button', { class: 'btn', onclick: apiModal }, icon('code'), h('span', { class: 'lbl' }, 'API')) : null,
+    can('editor') ? h('button', { class: 'btn hx-btn', title: 'Änderungsverlauf (wer hat was geändert, rückgängig machen)', onclick: toggleHistory }, icon('history'), h('span', { class: 'lbl' }, 'Verlauf')) : null,
     can('admin') && !S.publicToken ? h('button', { class: 'btn', onclick: () => accessModal(rd) }, icon('lock'), h('span', { class: 'lbl' }, 'Freigaben')) : null);
 
   R.toolbar = h('div', { class: 'toolbar' },
