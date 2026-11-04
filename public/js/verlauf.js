@@ -1,7 +1,7 @@
 // Änderungsverlauf: Seitenleiste mit allen Änderungen eines Rundowns, Rückgängig pro Eintrag,
 // „Stand wiederherstellen“ und Strg+Z / Strg+Umschalt+Z für die eigenen Änderungen.
 import { fmtDuration } from '/shared/timing.js';
-import { h, icon, toast, confirmDialog, menu, debounce } from '/js/ui.js';
+import { h, icon, toast, confirmDialog, menu, debounce, swipeDown } from '/js/ui.js';
 
 if (!document.querySelector('link[href="/css/verlauf.css"]')) document.head.append(h('link', { rel: 'stylesheet', href: '/css/verlauf.css' }));
 
@@ -78,8 +78,11 @@ export function openPanel(ctx) {
     h('div', { class: 'hx-tools' }, filterSel,
       h('span', { class: 'hx-keys', title: 'Tastenkürzel außerhalb von Eingabefeldern' }, h('kbd', null, navigator.platform.includes('Mac') ? '⌘Z' : 'Strg+Z'), ' eigene Änderung rückgängig')),
     list);
-  document.body.append(panel);
-  requestAnimationFrame(() => panel.classList.add('open'));
+  // Auf dem Handy: Kachel von unten mit abgedunkeltem Hintergrund – antippen oder nach unten wischen schließt
+  const back = h('div', { class: 'hx-back', onclick: () => close() });
+  document.body.append(back, panel);
+  swipeDown(panel, panel.querySelector('.hx-head'), () => close());
+  requestAnimationFrame(() => { panel.classList.add('open'); back.classList.add('open'); });
   const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('.modal-back')) close(); };
   document.addEventListener('keydown', onKey);
 
@@ -169,8 +172,9 @@ export function openPanel(ctx) {
 
   function close() {
     document.removeEventListener('keydown', onKey);
-    panel.classList.remove('open');
-    setTimeout(() => panel.remove(), 200);
+    panel.classList.remove('open'); back.classList.remove('open');
+    panel.style.transform = '';
+    setTimeout(() => { panel.remove(); back.remove(); }, 200);
     ctx.onClose?.();
   }
 

@@ -1114,6 +1114,7 @@ h1, .h1 { letter-spacing: .015em; }
   .modal-back { place-items: end center; padding: 0; }
   .modal { width: 100% !important; max-height: 92vh; border-radius: 22px 22px 0 0; animation: sheetin .25s cubic-bezier(.2, .8, .2, 1); padding-bottom: env(safe-area-inset-bottom); }
   .modal-head { border-radius: 22px 22px 0 0; }
+  .modal-head { touch-action: none; }
   .modal-head::before { content: ''; position: absolute; left: 50%; top: 7px; width: 38px; height: 4px; margin-left: -19px; border-radius: 4px; background: var(--border-2); }
   @keyframes sheetin { from { transform: translateY(40px); opacity: .6; } }
 }
