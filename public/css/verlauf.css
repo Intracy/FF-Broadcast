@@ -43,8 +43,14 @@
 .hx-empty .ico { width: 28px; height: 28px; }
 .hx-empty b { color: var(--text); }
 
+.hx-back { display: none; }
 @media (max-width: 600px) {
-  .hx-panel { width: 100vw; }
+  /* Kachel von unten, wie die Dialoge */
+  .hx-back { display: block; position: fixed; inset: 0; z-index: 119; background: rgba(0, 0, 0, .6); backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .hx-back.open { opacity: 1; pointer-events: auto; }
+  .hx-panel { top: auto; left: 0; width: 100vw; height: 88vh; border-left: 0; border-top: 1px solid var(--border-2); border-radius: 22px 22px 0 0; transform: translateY(105%); box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, .6); padding-bottom: env(safe-area-inset-bottom); }
+  .hx-head { position: relative; padding-top: 22px; touch-action: none; }
+  .hx-head::before { content: ''; position: absolute; left: 50%; top: 8px; width: 38px; height: 4px; margin-left: -19px; border-radius: 4px; background: var(--border-2); }
   .hx-keys { display: none; }
   .hx-act .btn.sm { padding: 0 8px; }
 }

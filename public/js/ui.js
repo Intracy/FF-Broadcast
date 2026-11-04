@@ -107,6 +107,28 @@ export function toast(msg, type = '') {
   setTimeout(() => t.remove(), type === 'err' ? 4500 : 2500);
 }
 
+/* ---------- Auf dem Handy: Kachel (Bottom Sheet) nach unten wegwischen */
+export function swipeDown(sheet, handle, onClose) {
+  let y0 = null, dy = 0;
+  handle.addEventListener('touchstart', (e) => {
+    if (!window.matchMedia('(max-width: 600px)').matches || e.target.closest('button, input, select, textarea, a')) return;
+    y0 = e.touches[0].clientY; dy = 0; sheet.style.transition = 'none';
+  }, { passive: true });
+  handle.addEventListener('touchmove', (e) => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    sheet.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  const end = () => {
+    if (y0 == null) return;
+    y0 = null; sheet.style.transition = 'transform .18s ease-out';
+    if (dy > 90) { sheet.style.transform = 'translateY(110%)'; setTimeout(onClose, 170); }
+    else sheet.style.transform = '';
+  };
+  handle.addEventListener('touchend', end);
+  handle.addEventListener('touchcancel', end);
+}
+
 /* ---------- Modal */
 export function modal({ title, body, actions = [], wide = false, onClose }) {
   const close = () => { back.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
@@ -120,6 +142,7 @@ export function modal({ title, body, actions = [], wide = false, onClose }) {
   const back = h('div', { class: 'modal-back', onmousedown: (e) => { if (e.target === back) close(); } }, content);
   document.body.append(back);
   document.addEventListener('keydown', onKey);
+  swipeDown(content, content.querySelector('.modal-head'), close);
   setTimeout(() => back.querySelector('input:not([type=checkbox]),textarea,select')?.focus(), 30);
   return { close, el: content };
 }
