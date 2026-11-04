@@ -1729,10 +1729,11 @@ function viewMenu(anchor) {
     { label: 'Mitlaufen (aktueller Punkt oben)', icon: followOn() ? 'check' : 'follow', active: followOn(), onClick: toggleFollow },
     { label: 'Erledigte Punkte ausblenden', icon: S.prefs.hideDone ? 'check' : 'eyeOff', active: S.prefs.hideDone, onClick: () => { S.prefs.hideDone = !S.prefs.hideDone; savePrefs(); applyPageClasses(); } },
     { label: 'Spalten ein-/ausblenden …', icon: 'columns', onClick: columnsModal },
+    { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
+  items.push(
     { label: 'Drucken: Ablaufplan', icon: 'printer', onClick: () => openPrint('plan') },
     { label: 'Drucken: Abteilungsliste', icon: 'printer', onClick: () => openPrint('dept') },
-    { label: 'Drucken: Moderationsskript', icon: 'printer', onClick: () => openPrint('script') },
-    { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
+    { label: 'Drucken: Moderationsskript', icon: 'printer', onClick: () => openPrint('script') });
   menu(anchor, items);
 }
 
