@@ -1340,3 +1340,27 @@ textarea.script-in { overflow: hidden; }
   :root[data-theme='light'] .item-row:not(.has-color) .script-in { background: var(--surface); border-color: var(--border-2); }
   .item-row > .cell.title .script-btn { margin: -4px -4px 0 0; }
 }
+
+/* =====================================================================
+   Blöcke ein- und ausklappen
+   ===================================================================== */
+.block-row .block-cell { cursor: pointer; user-select: none; }
+.block-row .block-cell input { cursor: text; user-select: text; }
+.block-toggle { flex: none; margin: -6px -8px -6px auto; width: 36px; height: 36px; border-radius: 9px; color: inherit !important; opacity: .85; }
+.block-toggle .ico { width: 22px; height: 22px; }
+.block-toggle:hover, .block-cell:hover .block-toggle { background: rgba(255, 255, 255, .16) !important; opacity: 1; }
+:root[data-theme='light'] .block-row:not(.has-color) .block-toggle:hover, :root[data-theme='light'] .block-row:not(.has-color) .block-cell:hover .block-toggle { background: rgba(0, 0, 0, .08) !important; }
+.block-row .block-cell input { flex: 0 1 auto; width: auto; max-width: 100%; }
+.row.in-collapsed:not(.is-live) { display: none; }
+/* Laufender Punkt bleibt auch im eingeklappten Block sichtbar – mit Hinweis */
+.row.in-collapsed.is-live { position: relative; }
+.block-row.collapsed .block-cell { box-shadow: 0 6px 0 -2px color-mix(in srgb, var(--c, var(--surface-3)) 55%, transparent), 0 11px 0 -4px color-mix(in srgb, var(--c, var(--surface-3)) 30%, transparent); }
+.block-row.collapsed { margin-bottom: 8px; }
+
+.compact .block-toggle, .block-row .block-cell .block-toggle { width: 30px; height: 30px; }
+.compact .block-toggle .ico { width: 19px; height: 19px; }
+
+@media (max-width: 900px) {
+  .block-toggle { order: 2; margin: -4px -6px -4px auto; }
+  .block-cell .bmeta { order: 3; }
+}
