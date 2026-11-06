@@ -351,7 +351,7 @@ async function viewRundowns() {
   shell('rundowns', h('div', { class: 'page ov-page' },
     h('div', { class: 'page-head' },
       h('div', null, h('div', { class: 'label' }, 'Übersicht'), h('h1', null, 'Rundowns'), sub),
-      canCreate() ? h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+      canCreate() ? h('div', { class: 'page-actions' },
         h('button', { class: 'btn', title: 'Rundown aus Excel- oder CSV-Datei anlegen', onclick: () => importRundown() }, icon('upload'), h('span', { class: 'lbl' }, 'Importieren')),
         h('button', { class: 'btn primary', onclick: newRundown }, icon('plus'), 'Neuer Rundown')) : null),
     h('div', { class: 'ov-tools' },
