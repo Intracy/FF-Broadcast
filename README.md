@@ -1,3 +1,5 @@
+<a href="docs/ff-broadcast-launch.mp4"><img src="docs/ff-broadcast-launch.jpg" alt="FF-Broadcast in 20 Sekunden – Video ansehen" width="100%"></a>
+
 # FF Rundown
 
 Selbst gehostete Rundown-App für Live-Produktionen und Events. Läuft auf NAS (Synology, QNAP, Unraid), Linux-Servern, Raspberry Pi, Mac und Windows – im lokalen Netz oder über das Internet. Zugriff per Browser auf PC, Tablet und Smartphone; auf dem Handy lässt sie sich als App zum Homescreen hinzufügen (PWA).
