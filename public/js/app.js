@@ -1558,8 +1558,43 @@ function colorPicker(anchor, id) {
 }
 
 /* ---------- Drag & Drop (Maus & Touch) */
+// Verschiebe-Modus für Blöcke – pro Gerät gemerkt (am Handy einmal umstellen statt Alt-Taste)
+function moveWithContent() { try { return localStorage.getItem('ffr.moveContent') !== '0'; } catch { return true; } }
+function setMoveWithContent(on) { try { localStorage.setItem('ffr.moveContent', on ? '1' : '0'); } catch { /* */ } }
+
+/** Einträge, die zu einem Block gehören: alle Punkte bis zum Block-Ende (inkl.) bzw. bis zum nächsten Block */
+function blockMembers(blockId) {
+  const items = S.rd.items, i = items.findIndex((x) => x.id === blockId), out = [];
+  for (let j = i + 1; j < items.length; j++) {
+    if (items[j].type === 'block') break;
+    out.push(items[j].id);
+    if (items[j].type === 'block_end') break;
+  }
+  return out;
+}
+/** id -> id des Blocks, in dem der Eintrag liegt (Block-Ende zählt zum Block) */
+function blockOfMap() {
+  const m = new Map();
+  let cur = null;
+  for (const it of S.rd.items) {
+    if (it.type === 'block') { cur = it.id; continue; }
+    if (cur != null) m.set(it.id, cur);
+    if (it.type === 'block_end') cur = null;
+  }
+  return m;
+}
+
 function startDrag(row, e) {
   flushSaves();
+  const isBlock = row.classList.contains('block-row');
+  const bid = Number(row.dataset.id);
+  const memberIds = isBlock ? blockMembers(bid) : [];
+  const memberRows = memberIds.map((id) => R.rows.querySelector(`[data-id="${id}"]`)).filter(Boolean);
+  const blockOf = blockOfMap();
+  // Grundeinstellung aus dem Mehr-Menü; Alt/⌥ (oder der Knopf im Hinweis) kehrt sie für diesen Zug um
+  const pref = moveWithContent();
+  let withContent = isBlock && memberIds.length > 0 && (e.altKey ? !pref : pref);
+
   const rect = row.getBoundingClientRect();
   const ghost = row.cloneNode(true);
   const src = row.querySelectorAll('textarea,input');
@@ -1567,11 +1602,35 @@ function startDrag(row, e) {
   ghost.classList.add('drag-ghost');
   Object.assign(ghost.style, { width: rect.width + 'px', left: rect.left + 'px', top: rect.top + 'px' });
   ghost.style.setProperty('--cols', R.grid.style.getPropertyValue('--cols'));
+  const badge = isBlock && memberIds.length ? h('span', { class: 'drag-count' }) : null;
+  if (badge) ghost.append(badge);
   document.body.append(ghost);
+
+  // Hinweis unten: Modus anzeigen und umschalten (auch per Touch mit zweitem Finger)
+  const nItems = memberIds.filter((id) => item(id)?.type === 'item').length;
+  const modeBtn = isBlock && memberIds.length ? h('button', { class: 'btn sm', onpointerdown: (ev) => { ev.preventDefault(); ev.stopPropagation(); setMode(!withContent); } }) : null;
+  const hintTxt = h('span');
+  const hint = isBlock && memberIds.length ? h('div', { class: 'drag-hint' }, icon('grip'), hintTxt, modeBtn) : null;
+  if (hint) document.body.append(hint);
+
+  function setMode(on) {
+    withContent = on;
+    memberRows.forEach((r) => r.classList.toggle('drag-member', on));
+    if (badge) badge.textContent = on ? `+ ${nItems} Punkt${nItems === 1 ? '' : 'e'}` : 'nur Blockzeile';
+    if (hint) {
+      hintTxt.textContent = on ? `Block mit Inhalt verschieben (${nItems} Punkt${nItems === 1 ? '' : 'e'})` : 'Nur die Blockzeile verschieben';
+      modeBtn.textContent = on ? 'Nur Blockzeile' : 'Mit Inhalt';
+      hint.classList.toggle('alt', !on);
+      const k = navigator.platform.includes('Mac') ? '⌥' : 'Alt';
+      hint.title = `${k} gedrückt halten = ${pref ? 'nur Blockzeile' : 'mit Inhalt'} · Grundeinstellung im Menü ⋯ → Ansicht`;
+    }
+    place();
+  }
+
   row.classList.add('dragging');
   S.dragging = true;
   const dy = e.clientY - rect.top;
-  let lastY = e.clientY, raf = null;
+  let lastY = e.clientY, raf = null, lastAlt = !!e.altKey;
   const scroller = () => {
     const edge = 70;
     if (lastY < edge) window.scrollBy(0, -14);
@@ -1579,37 +1638,51 @@ function startDrag(row, e) {
     place();
     raf = requestAnimationFrame(scroller);
   };
+  // Mit Inhalt darf der Block nicht mitten in einen anderen Block fallen
+  const allowed = (s) => !withContent || !s || s.classList.contains('block-row') || !blockOf.has(Number(s.dataset.id));
   const place = () => {
     ghost.style.top = lastY - dy + 'px';
     let before = null;
     for (const s of R.rows.children) {
-      if (s === row) continue;
+      if (s === row || (withContent && memberRows.includes(s)) || s.offsetParent === null) continue;
       const r = s.getBoundingClientRect();
       if (lastY < r.top + r.height / 2) { before = s; break; }
     }
+    if (!allowed(before)) return;
     if (before !== row.nextSibling && before !== row) R.rows.insertBefore(row, before);
   };
-  const move = (ev) => { lastY = ev.clientY; place(); };
+  const move = (ev) => {
+    lastY = ev.clientY;
+    if (isBlock && memberIds.length && ev.altKey !== lastAlt) { lastAlt = ev.altKey; setMode(ev.altKey ? !pref : pref); }
+    place();
+  };
   const up = () => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', up);
     document.removeEventListener('pointercancel', up);
     cancelAnimationFrame(raf);
     ghost.remove();
+    hint?.remove();
+    memberRows.forEach((r) => r.classList.remove('drag-member'));
     row.classList.remove('dragging');
     S.dragging = false;
-    const ids = [...R.rows.children].map((x) => Number(x.dataset.id)).filter(Boolean);
+    let ids = [...R.rows.children].map((x) => Number(x.dataset.id)).filter(Boolean);
+    if (withContent) {
+      ids = ids.filter((id) => !memberIds.includes(id));
+      ids.splice(ids.indexOf(bid) + 1, 0, ...memberIds);
+    }
     const before = S.rd.items.map((i) => i.id);
     if (ids.join() !== before.join()) {
       const byId = new Map(S.rd.items.map((i) => [i.id, i]));
       S.rd.items = ids.map((i) => byId.get(i));
       renderRows();
       api('POST', `/api/rundowns/${S.rd.rundown.id}/reorder`, { ids }).then(applyPayload).catch((ex) => toast(ex.message, 'err'));
-    } else if (S.deferred) { const d = S.deferred; S.deferred = null; applyPayload(d); }
+    } else { renderRows(); if (S.deferred) { const d = S.deferred; S.deferred = null; applyPayload(d); } }
   };
   document.addEventListener('pointermove', move);
   document.addEventListener('pointerup', up);
   document.addEventListener('pointercancel', up);
+  if (isBlock && memberIds.length) setMode(withContent);
   raf = requestAnimationFrame(scroller);
 }
 
@@ -1894,7 +1967,9 @@ function viewMenu(anchor) {
     { label: 'Spalten ein-/ausblenden …', icon: 'columns', onClick: columnsModal },
     ...(S.rd.items.some((i) => i.type === 'block') ? [
       { label: 'Alle Blöcke einklappen', icon: 'chevronUp', onClick: () => setAllBlocks(true) },
-      { label: 'Alle Blöcke ausklappen', icon: 'chevronDown', onClick: () => setAllBlocks(false) }] : []),
+      { label: 'Alle Blöcke ausklappen', icon: 'chevronDown', onClick: () => setAllBlocks(false) },
+      ...(canEdit() ? [{ label: 'Blöcke mit Inhalt verschieben', sub: moveWithContent() ? 'An – Ziehen nimmt alle Punkte mit' : 'Aus – Ziehen verschiebt nur die Blockzeile', icon: moveWithContent() ? 'check' : 'grip', active: moveWithContent(),
+        onClick: () => { setMoveWithContent(!moveWithContent()); toast(moveWithContent() ? 'Blöcke werden mit Inhalt verschoben' : 'Nur die Blockzeile wird verschoben', 'ok'); } }] : [])] : []),
     { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
   if (!anchor) return items;
   menu(anchor, items);
