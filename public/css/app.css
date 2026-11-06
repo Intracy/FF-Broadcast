@@ -248,10 +248,12 @@ textarea.input { height: auto; padding: 10px 14px; resize: vertical; }
 .row-actions .icon-btn .ico { width: 21px; height: 21px; }
 .row-actions .palette { color: var(--accent-2); }
 .row-actions .del { color: var(--red-text); }
-.row-prog { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; display: none; }
-.row-prog > span { display: block; height: 100%; width: 0; background: var(--green); transition: width .25s linear; }
+/* Zeitleiste im laufenden Punkt: schmal und eingerückt, damit sie sicher innerhalb des (abgerundeten) Rahmens bleibt */
+.row-prog { position: absolute; left: 10px; right: 10px; bottom: 5px; height: 3px; border-radius: 99px; overflow: hidden; display: none; background: color-mix(in srgb, var(--green) 14%, transparent); pointer-events: none; }
+.row-prog > span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--green); transition: width .25s linear; }
 .item-row.is-live .row-prog { display: block; }
 .item-row.is-live.over .row-prog > span { background: var(--red); }
+.item-row.is-live.over .row-prog { background: color-mix(in srgb, var(--red) 14%, transparent); }
 .item-row.is-live .cell { box-shadow: 0 0 0 2px var(--green), 0 0 24px color-mix(in srgb, var(--green) 25%, transparent); }
 .item-row.is-live.over .cell { box-shadow: 0 0 0 2px var(--red), 0 0 24px color-mix(in srgb, var(--red) 25%, transparent); }
 .item-row.is-live .nr { background: var(--green); color: #04130a; }
@@ -452,7 +454,7 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
 .cell .t2:placeholder-shown { font-size: 13px; }
 .cell.txt textarea, .cell.txt .ro-text { font-size: 13.5px; }
 .grip .ico { width: 15px; height: 15px; }
-.row-prog { height: 3px; border-radius: 0 0 9px 9px; }
+.row-prog { height: 3px; }
 .row-actions { display: grid; grid-template-columns: repeat(2, 28px); grid-auto-rows: 28px; gap: 2px; align-content: center; justify-content: center; padding: 0; }
 .row-actions .icon-btn { width: 28px; height: 28px; border-radius: 7px; }
 .row-actions .icon-btn .ico { width: 16px; height: 16px; }
@@ -554,7 +556,7 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
   .item-row.open > .row-actions .expand .ico { transform: rotate(180deg); }
   .row-actions .icon-btn:hover { background: rgba(255, 255, 255, .1); }
 
-  .item-row .row-prog { left: 0; right: 0; bottom: 0; height: 4px; border-radius: 0 0 14px 14px; }
+  .item-row .row-prog { left: 12px; right: 12px; bottom: 6px; height: 3px; }
   .item-row.is-live { box-shadow: 0 0 0 2px var(--green), 0 0 18px color-mix(in srgb, var(--green) 25%, transparent); }
   .item-row.is-live.over { box-shadow: 0 0 0 2px var(--red), 0 0 18px color-mix(in srgb, var(--red) 25%, transparent); }
   .item-row.is-live > .nr { background: var(--green) !important; color: #04130a; }
