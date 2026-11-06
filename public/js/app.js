@@ -1558,6 +1558,10 @@ function colorPicker(anchor, id) {
 }
 
 /* ---------- Drag & Drop (Maus & Touch) */
+// Verschiebe-Modus für Blöcke – pro Gerät gemerkt (am Handy einmal umstellen statt Alt-Taste)
+function moveWithContent() { try { return localStorage.getItem('ffr.moveContent') !== '0'; } catch { return true; } }
+function setMoveWithContent(on) { try { localStorage.setItem('ffr.moveContent', on ? '1' : '0'); } catch { /* */ } }
+
 /** Einträge, die zu einem Block gehören: alle Punkte bis zum Block-Ende (inkl.) bzw. bis zum nächsten Block */
 function blockMembers(blockId) {
   const items = S.rd.items, i = items.findIndex((x) => x.id === blockId), out = [];
@@ -1587,8 +1591,9 @@ function startDrag(row, e) {
   const memberIds = isBlock ? blockMembers(bid) : [];
   const memberRows = memberIds.map((id) => R.rows.querySelector(`[data-id="${id}"]`)).filter(Boolean);
   const blockOf = blockOfMap();
-  // Blöcke wandern standardmäßig mit Inhalt; Alt/⌥ (oder der Knopf unten) = nur die Blockzeile
-  let withContent = isBlock && memberIds.length > 0 && !e.altKey;
+  // Grundeinstellung aus dem Mehr-Menü; Alt/⌥ (oder der Knopf im Hinweis) kehrt sie für diesen Zug um
+  const pref = moveWithContent();
+  let withContent = isBlock && memberIds.length > 0 && (e.altKey ? !pref : pref);
 
   const rect = row.getBoundingClientRect();
   const ghost = row.cloneNode(true);
@@ -1617,7 +1622,7 @@ function startDrag(row, e) {
       modeBtn.textContent = on ? 'Nur Blockzeile' : 'Mit Inhalt';
       hint.classList.toggle('alt', !on);
       const k = navigator.platform.includes('Mac') ? '⌥' : 'Alt';
-      hint.title = `${k} gedrückt halten = nur Blockzeile`;
+      hint.title = `${k} gedrückt halten = ${pref ? 'nur Blockzeile' : 'mit Inhalt'} · Grundeinstellung im Menü ⋯ → Ansicht`;
     }
     place();
   }
@@ -1648,7 +1653,7 @@ function startDrag(row, e) {
   };
   const move = (ev) => {
     lastY = ev.clientY;
-    if (isBlock && memberIds.length && ev.altKey !== lastAlt) { lastAlt = ev.altKey; setMode(!ev.altKey); }
+    if (isBlock && memberIds.length && ev.altKey !== lastAlt) { lastAlt = ev.altKey; setMode(ev.altKey ? !pref : pref); }
     place();
   };
   const up = () => {
@@ -1962,7 +1967,9 @@ function viewMenu(anchor) {
     { label: 'Spalten ein-/ausblenden …', icon: 'columns', onClick: columnsModal },
     ...(S.rd.items.some((i) => i.type === 'block') ? [
       { label: 'Alle Blöcke einklappen', icon: 'chevronUp', onClick: () => setAllBlocks(true) },
-      { label: 'Alle Blöcke ausklappen', icon: 'chevronDown', onClick: () => setAllBlocks(false) }] : []),
+      { label: 'Alle Blöcke ausklappen', icon: 'chevronDown', onClick: () => setAllBlocks(false) },
+      ...(canEdit() ? [{ label: 'Blöcke mit Inhalt verschieben', sub: moveWithContent() ? 'An – Ziehen nimmt alle Punkte mit' : 'Aus – Ziehen verschiebt nur die Blockzeile', icon: moveWithContent() ? 'check' : 'grip', active: moveWithContent(),
+        onClick: () => { setMoveWithContent(!moveWithContent()); toast(moveWithContent() ? 'Blöcke werden mit Inhalt verschoben' : 'Nur die Blockzeile wird verschoben', 'ok'); } }] : [])] : []),
     { label: 'Live-Ansicht im Vollbild', icon: 'monitor', onClick: () => window.open(S.publicToken ? `/live/p/${encodeURIComponent(S.publicToken)}` : `/live/${S.rd.rundown.id}`, '_blank') });
   if (!anchor) return items;
   menu(anchor, items);
