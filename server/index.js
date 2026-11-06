@@ -665,6 +665,43 @@ POST('/api/rundowns/:id/items', needRd('editor'), (req) => {
   return { id: newId, ...payload(Q.rdById.get(rd.id)) };
 });
 
+// Block (inkl. aller Punkte bis Block-Ende) oder einzelnen Punkt duplizieren – die Kopie kommt direkt dahinter
+POST('/api/items/:id/duplicate', needRd('editor', (req) => Q.itemById.get(Number(req.params.id))?.rundown_id), (req) => {
+  const src = getItem(req.params.id);
+  const rid = src.rundown_id;
+  const rows = Q.itemsByRd.all(rid);
+  const start = rows.findIndex((r) => r.id === src.id);
+  let end = start; // letzter Index, der mitkopiert wird
+  if (src.type === 'block') {
+    for (let i = start + 1; i < rows.length; i++) {
+      if (rows[i].type === 'block') break;
+      end = i;
+      if (rows[i].type === 'block_end') break;
+    }
+  } else if (src.type === 'block_end') fail(400, 'Ein Block-Ende allein kann nicht dupliziert werden');
+  const part = rows.slice(start, end + 1);
+  if (rows.length + part.length > 5000) fail(400, 'Zu viele Einträge');
+  const ops = [];
+  let firstId = null;
+  tx(() => {
+    const ids = rows.map((r) => r.id);
+    const fresh = part.map((r, i) => {
+      const title = i === 0 && r.title ? `${r.title} (Kopie)`.slice(0, 2000) : r.title;
+      const nid = Number(Q.insertItem.run(rid, 0, r.type, title, r.description, r.duration, r.color, r.cells || '{}').lastInsertRowid);
+      if (r.script) Q.setItemScript.run(r.script, nid);
+      return nid;
+    });
+    firstId = fresh[0];
+    ids.splice(end + 1, 0, ...fresh);
+    resequence(rid, ids);
+    const order = Q.itemsByRd.all(rid).map((r) => r.id);
+    for (const nid of fresh) ops.push({ t: 'item', id: nid, b: null, a: hist.itemFull(Q.itemById.get(nid), order) });
+  });
+  hist.record(rid, req.user, src.type === 'block' ? 'block.dup' : 'item.dup', src.title, ops);
+  changed(rid, req);
+  return { id: firstId, count: part.length, ...payload(Q.rdById.get(rid)) };
+});
+
 POST('/api/rundowns/:id/reorder', needRd('editor'), (req) => {
   const rd = getRundown(req.params.id);
   const current = new Set(Q.itemsByRd.all(rd.id).map((i) => i.id));
