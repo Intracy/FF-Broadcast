@@ -1195,7 +1195,8 @@ h1, .h1 { letter-spacing: .015em; }
 .probe-chip:disabled { cursor: default; opacity: .9; }
 .probe-chip:disabled:not(.on) { display: none; }
 .btn.probe-btn { background: var(--probe) !important; color: #032027 !important; }
-.live-bar.is-probe { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--probe) 6%, transparent) 0 12px, transparent 12px 24px); }
+/* Streifen ÜBER den deckenden Kartenhintergrund legen – sonst wird die (mitlaufende) Leiste durchsichtig */
+.live-bar.is-probe { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--probe) 6%, transparent) 0 12px, transparent 12px 24px), var(--card-bg); }
 .live-bar.is-probe .live-now > span:first-child { color: var(--probe); }
 .probe-tag { flex: none; padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--probe) 18%, transparent); color: var(--probe); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .ov-live.probe { background: color-mix(in srgb, var(--probe) 8%, var(--surface)); border-color: color-mix(in srgb, var(--probe) 30%, transparent); }
