@@ -102,7 +102,6 @@ h2 { font-family: var(--font-cond); font-weight: 700; text-transform: uppercase;
 .btn .ico-slot { display: contents; }
 .btn.pulse { animation: btnpulse 1.4s ease-in-out infinite; }
 @keyframes btnpulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--green) 30%, transparent); } }
-.live-bar.is-paused { border-color: color-mix(in srgb, var(--yellow) 55%, transparent) !important; }
 .live-bar.is-paused .live-now { color: var(--yellow); }
 .live-bar.is-paused .progress > * { background: var(--yellow) !important; }
 .btn.red { background: var(--red); color: #fff; }
@@ -1110,10 +1109,15 @@ h1, .h1 { letter-spacing: .015em; }
 @media (min-width: 601px) { .live-bar { position: relative; } }
 @media (min-width: 601px) { .live-bar .title { display: inline-flex; align-items: center; gap: 9px; } }
 .live-bar .title::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px color-mix(in srgb, var(--muted) 20%, transparent); }
-.live-bar.is-live { border-color: color-mix(in srgb, var(--green) 40%, transparent); box-shadow: var(--elev-1), 0 0 0 1px color-mix(in srgb, var(--green) 15%, transparent), 0 14px 40px -18px color-mix(in srgb, var(--green) 55%, transparent); }
-.live-bar.is-live .title::before { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent); animation: pulse 1.4s infinite; }
-.live-bar.is-over { border-color: color-mix(in srgb, var(--red) 45%, transparent); box-shadow: var(--elev-1), 0 14px 40px -18px color-mix(in srgb, var(--red) 60%, transparent); }
-.live-bar.is-over .title::before { background: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 25%, transparent); }
+/* Rahmenfarbe der Live-Leiste je Zustand – Rand, Ring, Schein und Punkt immer in derselben Farbe.
+   Reihenfolge = Vorrang: Pause vor Überzeit vor Probe vor Live */
+.live-bar { --lb: var(--green); }
+.live-bar.is-probe { --lb: var(--probe); }
+.live-bar.is-live.is-over { --lb: var(--red); }
+.live-bar.is-live.is-paused { --lb: var(--yellow); }
+.live-bar.is-live, .live-bar.is-probe { border-color: color-mix(in srgb, var(--lb) 50%, transparent); }
+.live-bar.is-live { box-shadow: var(--elev-1), 0 0 0 1px color-mix(in srgb, var(--lb) 15%, transparent), 0 14px 40px -18px color-mix(in srgb, var(--lb) 55%, transparent); }
+.live-bar.is-live .title::before { background: var(--lb); box-shadow: 0 0 0 3px color-mix(in srgb, var(--lb) 25%, transparent); animation: pulse 1.4s infinite; }
 .live-stats > span { padding: 4px 10px; border-radius: 9px; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
 .progress { background: color-mix(in srgb, var(--surface-3) 70%, transparent); }
 .progress > span { background: linear-gradient(90deg, #16a34a, var(--green)); }
@@ -1181,7 +1185,7 @@ h1, .h1 { letter-spacing: .015em; }
 .probe-chip:disabled { cursor: default; opacity: .9; }
 .probe-chip:disabled:not(.on) { display: none; }
 .btn.probe-btn { background: var(--probe) !important; color: #032027 !important; }
-.live-bar.is-probe { border-color: color-mix(in srgb, var(--probe) 55%, transparent) !important; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--probe) 6%, transparent) 0 12px, transparent 12px 24px); }
+.live-bar.is-probe { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--probe) 6%, transparent) 0 12px, transparent 12px 24px); }
 .live-bar.is-probe .live-now > span:first-child { color: var(--probe); }
 .probe-tag { flex: none; padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--probe) 18%, transparent); color: var(--probe); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .ov-live.probe { background: color-mix(in srgb, var(--probe) 8%, var(--surface)); border-color: color-mix(in srgb, var(--probe) 30%, transparent); }
@@ -1192,7 +1196,7 @@ h1, .h1 { letter-spacing: .015em; }
 }
 @media (min-width: 601px) {
   .live-bar { position: sticky; top: 70px; z-index: 40; background: var(--card-bg); }
-  .live-bar::before { content: ''; position: absolute; left: -1px; right: -1px; top: -12px; height: 12px; background: var(--bg); pointer-events: none; }
+  .live-bar::before { content: ''; position: absolute; left: -2px; right: -2px; top: -14px; height: 13px; background: var(--bg); pointer-events: none; } /* endet über dem Rand, verdeckt ihn nicht */
 }
 /* Eigenes Logo */
 .brand-mark .ico { width: 24px !important; height: 24px !important; }
