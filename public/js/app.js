@@ -560,7 +560,7 @@ function relTime(sqlDate) {
 
 const PRESENCE_COLORS = ['#a78bfa', '#60a5fa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#a3e635'];
 const userColor = (id) => PRESENCE_COLORS[Math.abs(Number(id) || 0) % PRESENCE_COLORS.length];
-const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', prompter: 'im Prompter', timer: 'im Timer', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
+const VIEW_LABEL = { editor: 'im Rundown', live: 'in der Live-Ansicht', prompter: 'im Prompter', timer: 'im Timer', aufnahmeleitung: 'in der Aufnahmeleitung', regie: 'in der Regie', stapel: 'im Vollbild-Stapel', schild: 'am Schild', overview: 'in der Übersicht', users: 'in der Benutzerverwaltung' };
 
 /** Kleiner Avatar-Stapel für eine Liste von Personen */
 function avatarStack(people, { max = 4, size = 'xs', title = '' } = {}) {
@@ -1136,7 +1136,7 @@ function buildRundownPage() {
   // Kopfleiste: Ausgabe ▾ · Teilen ▾ · Verlauf · Mehr ⋯ (auf dem Handy alles im Mehr-Menü)
   const shareItems = shareMenuItems();
   const headActions = h('div', { class: 'rd-head-actions' },
-    h('button', { class: 'btn hd-wide', title: 'Live-Ansicht, Prompter oder Timer in neuem Fenster öffnen', onclick: (e) => menu(e.currentTarget, outputMenuItems()) }, icon('monitor'), h('span', { class: 'lbl' }, 'Ausgabe'), icon('chevronDown', 'caret')),
+    h('button', { class: 'btn hd-wide', title: 'Live-Ansicht, Prompter, Timer, Aufnahmeleitung, Regie oder Vollbild-Stapel in neuem Fenster öffnen', onclick: (e) => menu(e.currentTarget, outputMenuItems()) }, icon('monitor'), h('span', { class: 'lbl' }, 'Ausgabe'), icon('chevronDown', 'caret')),
     shareItems.length ? h('button', { class: 'btn hd-wide', title: 'Öffentlicher Link, Freigaben und API', onclick: (e) => menu(e.currentTarget, shareMenuItems()) }, icon('share'), h('span', { class: 'lbl' }, 'Teilen'), icon('chevronDown', 'caret')) : null,
     can('editor') ? h('button', { class: 'btn icon-only hd-wide hx-btn', title: 'Verlauf – wer hat was geändert, rückgängig machen', 'aria-label': 'Verlauf', onclick: toggleHistory }, icon('history')) : null,
     h('button', { class: 'btn icon-only hd-more', title: 'Mehr: Ansicht, Drucken, Import/Export', 'aria-label': 'Mehr', onclick: (e) => moreMenu(e.currentTarget) }, icon('more')));
@@ -1872,6 +1872,10 @@ function outputMenuItems() {
     { label: 'Live-Ansicht', sub: 'Vollbild für Regie und Bildschirme', icon: 'external', onClick: () => window.open(outLink('live'), '_blank') },
     { label: 'Prompter', sub: 'Skript für die Moderation', icon: 'prompter', onClick: () => window.open(outLink('prompter'), '_blank') },
     { label: 'Timer', sub: 'Countdown für die Bühne', icon: 'timer', onClick: () => window.open(outLink('timer'), '_blank') },
+    { section: 'Aufnahmeleitung' },
+    { label: 'Aufnahmeleitung', sub: 'Bedienung fürs iPad, quer gedreht das Schild', icon: 'headset', onClick: () => window.open(outLink('aufnahmeleitung'), '_blank') },
+    { label: 'Regie', sub: 'Cue-Stapel mit Steuerung, Zeit + und Marker', icon: 'regie', onClick: () => window.open(outLink('regie'), '_blank') },
+    { label: 'Vollbild-Stapel', sub: 'Vorher · Jetzt · Danach für Bildschirme', icon: 'stack', onClick: () => window.open(outLink('stapel'), '_blank') },
   ];
 }
 /** Teilen & Zugriff – nur, was die eigene Rolle auch darf */

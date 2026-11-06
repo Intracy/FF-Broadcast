@@ -102,6 +102,7 @@ for (const sql of [
   'ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE users ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0',
   "ALTER TABLE items ADD COLUMN script TEXT NOT NULL DEFAULT ''", // Skript für den Prompter
+  "ALTER TABLE rundowns ADD COLUMN al_log TEXT NOT NULL DEFAULT '[]'", // Protokoll der Aufnahmeleitung (Marker, Signale, Cues)
 ]) { try { db.exec(sql); } catch { /* Spalte existiert bereits */ } }
 
 // Freigaben einzelner Rundowns für einzelne Benutzer (z. B. externe Dienstleister)
@@ -183,6 +184,8 @@ export const Q = {
   deleteRd: db.prepare('DELETE FROM rundowns WHERE id=?'),
   touchRd: db.prepare("UPDATE rundowns SET updated_at=datetime('now') WHERE id=?"),
   setLive: db.prepare('UPDATE rundowns SET live=? WHERE id=?'),
+  alLog: db.prepare('SELECT al_log FROM rundowns WHERE id=?'),
+  setAlLog: db.prepare('UPDATE rundowns SET al_log=? WHERE id=?'),
 
   blockCount: db.prepare("SELECT COUNT(*) AS n FROM items WHERE rundown_id=? AND type='block'"),
   colCount: db.prepare('SELECT COUNT(*) AS n FROM columns WHERE rundown_id=?'),

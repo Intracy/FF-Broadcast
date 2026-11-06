@@ -907,9 +907,26 @@ POST('/api/rundowns/:id/companion/regenerate', needRd('editor'), (req) => {
 });
 
 // ---------- Live-Steuerung
+const AL_LOG_MAX = 5000;
+/** Ereignisse der Aufnahmeleitung (für Nachbericht und Marker-Export) anhängen */
+function appendAlLog(rid, events) {
+  let log;
+  try { log = JSON.parse(Q.alLog.get(rid)?.al_log || '[]'); } catch { log = []; }
+  if (!Array.isArray(log)) log = [];
+  log.push(...events);
+  if (log.length > AL_LOG_MAX) log = log.slice(-AL_LOG_MAX);
+  Q.setAlLog.run(JSON.stringify(log), rid);
+}
+function alLogOf(rid) {
+  try { const l = JSON.parse(Q.alLog.get(rid)?.al_log || '[]'); return Array.isArray(l) ? l : []; } catch { return []; }
+}
+
 function doLive(rid, action, arg) {
   const rd = Q.rdById.get(rid);
   const next = applyLiveAction(loadItems(rid), parseLive(rd.live), action, arg, Date.now());
+  const events = next._events;
+  delete next._events;
+  if (events?.length) appendAlLog(rid, events);
   Q.setLive.run(JSON.stringify(next), rid);
   broadcastLive(rid);
   return next;
@@ -924,6 +941,9 @@ POST('/api/rundowns/:id/live/:action', needRd('operator'), (req) => {
   return { live, serverNow: Date.now() };
 });
 
+// Protokoll der Aufnahmeleitung (Nachbericht, Marker-Export als EDL)
+GET('/api/rundowns/:id/al-log', needRd('viewer'), (req) => ({ log: alLogOf(getRundown(req.params.id).id), serverNow: Date.now() }));
+
 // ---------- Öffentlich (nur lesen)
 function publicRundown(token) {
   const rd = Q.rdByPublic.get(String(token));
@@ -931,6 +951,7 @@ function publicRundown(token) {
   return rd;
 }
 GET('/api/public/:token', (req) => payload(publicRundown(req.params.token), { publicView: true }));
+GET('/api/public/:token/al-log', (req) => ({ log: alLogOf(publicRundown(req.params.token).id), serverNow: Date.now() }));
 
 // ---------- Companion / externe Steuerung
 function companionRundown(token) {
@@ -1192,7 +1213,7 @@ GET('/api/presence/:id', needRd('viewer'), (req) => presenceFor(getRundown(req.p
 GET('/api/events', (req, res) => {
   const q = req.query;
   const client = { res, id: `c${++clientSeq}-${randomToken(4)}`, user: req.user || null, rundownId: null, isPublic: false, lobby: false,
-    view: ['editor', 'live', 'prompter', 'timer', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
+    view: ['editor', 'live', 'prompter', 'timer', 'aufnahmeleitung', 'regie', 'stapel', 'schild', 'overview', 'users'].includes(q.view) ? q.view : 'editor', since: Date.now(), focus: null };
   if (q.public) {
     const rd = publicRundown(q.public);
     client.rundownId = rd.id;
@@ -1235,6 +1256,9 @@ const PAGES = [
   [/^\/prompter\/\d+\/?$/, 'prompter.html'],
   [/^\/print\/p\/[^/]+\/?$/, 'print.html'],
   [/^\/print\/\d+\/?$/, 'print.html'],
+  // Aufnahmeleitung (Bedienung + Schild), Regie, Vollbild-Stapel, Schild – aus FF-Aufnahmeleitung-Tool
+  [/^\/(aufnahmeleitung|regie|stapel|schild)\/p\/[^/]+\/?$/, 'al.html'],
+  [/^\/(aufnahmeleitung|regie|stapel|schild)\/\d+\/?$/, 'al.html'],
 ];
 
 const server = http.createServer(async (req, res) => {

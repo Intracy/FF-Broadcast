@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="de" data-appearance="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AL" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Aufnahmeleitung · Rundown</title>
+    <link rel="icon" href="/img/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/img/favicon-64.png" type="image/png" sizes="64x64" />
+    <link rel="apple-touch-icon" href="/img/icon-180.png" />
+    <link rel="stylesheet" href="/al/css/app.css" />
+    <script type="module" src="/al/js/app.js"></script>
+  </head>
+  <body>
+    <!-- Eigene Symbole (SF Symbols sind außerhalb von Apple-Apps nicht lizenziert) -->
+    <svg width="0" height="0" class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M3.5 7H13M18.5 7h2M3.5 17h2M10.5 17h10" /><circle cx="15.8" cy="7" r="2.4" /><circle cx="8" cy="17" r="2.4" /></symbol>
+      <symbol id="i-mode-al" viewBox="0 0 24 24"><path d="M4.5 13.5V12a7.5 7.5 0 0 1 15 0v1.5" /><rect x="2.8" y="12.5" width="4.4" height="7" rx="1.8" /><rect x="16.8" y="12.5" width="4.4" height="7" rx="1.8" /><path d="M19 19.5c0 1.6-2.2 2.3-5.5 2.3H12" /></symbol>
+      <symbol id="i-mode-sign" viewBox="0 0 24 24"><rect x="1.8" y="4.5" width="20.4" height="15" rx="2.8" /><rect x="5.2" y="8.3" width="4.6" height="7.4" rx="1.5" /><rect x="14.2" y="8.3" width="4.6" height="7.4" rx="1.5" /><path d="M12 10.2v.2M12 13.6v.2" /></symbol>
+      <symbol id="i-mode-regie" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13.5" rx="2.2" /><path d="M12 3v13.5M2 9.75h20M8 21h8M12 16.5V21" /></symbol>
+      <symbol id="i-mode-stack" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="3.6" rx="1.3" /><rect x="2" y="8" width="20" height="8" rx="2.2" /><rect x="5" y="18.4" width="14" height="3.6" rx="1.3" /></symbol>
+      <symbol id="i-house" viewBox="0 0 24 24"><path d="M3.2 11.2 12 3.6l8.8 7.6" /><path d="M5.6 9.4V20.4h4.6v-5.6h3.6v5.6h4.6V9.4" /></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5" /><path d="M11.3 11.7 20 3M16.5 6.5l2.5 2.5M14 9l2 2" /></symbol>
+      <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4" /><path d="M2.5 20c.6-3.8 3.2-5.9 6.5-5.9s5.9 2.1 6.5 5.9" /><circle cx="17" cy="9" r="2.6" /><path d="M16.5 14.2c2.9.1 4.6 2 5 4.8" /></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" /><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3 5.5 5.5" /><circle cx="12" cy="12" r="6.6" /></symbol>
+      <symbol id="i-wrap" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" /><path d="M19.6 3.6v4.2h-4.2" /></symbol>
+      <symbol id="i-cut" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+      <symbol id="i-stretch" viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" /></symbol>
+      <symbol id="i-sign" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="13" rx="2.5" /><path d="M8.5 21h7M12 17.5V21M7 11h10" /></symbol>
+      <symbol id="i-standby" viewBox="0 0 24 24"><path d="M5 7l5 5-5 5M12 7l5 5-5 5" /></symbol>
+      <symbol id="i-marker" viewBox="0 0 24 24"><path d="M6 21V3.5M6 4h11.5l-2.5 4.5 2.5 4.5H6" /></symbol>
+      <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" /></symbol>
+      <symbol id="i-source" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3L19.5 9M19.5 4.5V9H15M19.5 12a7.5 7.5 0 0 1-12.8 5.3L4.5 15M4.5 19.5V15H9" /></symbol>
+      <symbol id="i-jump" viewBox="0 0 24 24"><path d="M5 4v7a3 3 0 0 0 3 3h11M15 10l4 4-4 4" /></symbol>
+      <symbol id="i-anchor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5 21.5 20h-19z" /><path d="M12 10v4.5M12 17.3v.2" /></symbol>
+      <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5" /></symbol>
+      <symbol id="i-display" viewBox="0 0 24 24"><rect x="3.5" y="3" width="17" height="18" rx="2.5" /><path d="M8 8h8M8 12h8M8 16h5" /></symbol>
+      <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 4.5h16v11.5H10l-6 4.5z" /><path d="M8 8.5h8M8 12h5" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 20 20" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" /></symbol>
+      <symbol id="i-skip-next" viewBox="0 0 24 24"><path d="M4.5 5v14l10-7z" /><path d="M18.5 5v14" /></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></symbol>
+      <symbol id="i-skip-prev" viewBox="0 0 24 24"><path d="M19.5 5v14l-10-7z" /><path d="M5.5 5v14" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="2" /></symbol>
+      <symbol id="i-plus-time" viewBox="0 0 24 24"><circle cx="11" cy="13" r="7.5" /><path d="M11 9.5V13l2.2 1.6M18.5 2.5v5M16 5h5" /></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1" /><circle cx="4.5" cy="12" r="1" /><circle cx="4.5" cy="18" r="1" /></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></symbol>
+    </svg>
+
+    <!-- Bedienansicht -->
+    <main id="operator" class="op" hidden>
+      <header class="nav">
+        <div class="nav-leading">
+          <span class="pill" id="op-mode"><span class="dot"></span><span id="op-mode-text">–</span></span>
+          <span class="pill warn" id="op-alert" hidden></span>
+        </div>
+        <h1 class="nav-title" id="op-title">Aufnahmeleitung</h1>
+        <div class="nav-trailing">
+          <button class="lea-btn" id="op-lea" type="button" aria-pressed="false" title="Pastellfarben ein/aus">LEA MODE</button>
+          <button class="icon-btn" id="op-settings" type="button" aria-label="Einstellungen">
+            <svg class="i"><use href="#i-sliders" /></svg>
+          </button>
+          <a class="icon-btn mode-gear" href="/" data-route="editor" aria-label="Zurück zum Rundown" title="Zurück zum Rundown">
+            <svg class="i"><use href="#i-house" /></svg>
+          </a>
+        </div>
+      </header>
+
+      <section class="card peek peek-prev" id="peek-prev" aria-label="Vorheriger Cue" hidden></section>
+      <section class="card now" id="now" data-state="idle" aria-label="Aktueller Cue – tippen für den kompletten Rundown" role="button" tabindex="0">
+        <div class="now-head">
+          <span class="cat-stripe" id="now-cat"></span>
+          <div class="now-titles">
+            <div class="now-title t-title3"><span class="cue-num" id="now-num"></span><span id="now-title">Kein Cue aktiv</span></div>
+            <div class="now-meta t-subheadline"><span class="kind-badge" id="now-kind" hidden></span><span class="now-people" id="now-people"></span><span id="now-sub"></span></div>
+          </div>
+          <span class="state-badge" id="now-word"></span>
+          <span class="now-open" aria-hidden="true"><svg class="i"><use href="#i-list" /></svg></span>
+        </div>
+        <div class="now-time">
+          <span class="now-digits" id="now-digits" role="timer" aria-live="off">–:––</span>
+          <span class="now-aside t-subheadline" id="now-aside"></span>
+        </div>
+        <div class="progress" aria-hidden="true"><div class="progress-fill" id="now-bar"></div></div>
+        <div class="now-foot t-subheadline">
+          <span class="foot-label">Danach</span>
+          <span class="cue-num" id="next-num"></span>
+          <span id="next-title">–</span>
+          <span class="next-people" id="next-people"></span>
+          <span class="jump-tag" id="next-jump" hidden>SPRUNG</span>
+          <span class="foot-dur" id="next-dur"></span>
+        </div>
+      </section>
+      <section class="card peek peek-next" id="peek-next" aria-label="Nächster Cue" hidden></section>
+
+      <section class="card status" aria-label="Show-Status">
+        <div class="stat"><span class="stat-label">Moderation</span><span class="stat-value" id="st-mod">±0:00</span></div>
+        <div class="stat"><span class="stat-label">Spiel</span><span class="stat-value" id="st-game">±0:00</span></div>
+        <div class="stat"><span class="stat-label">Uhr</span><span class="stat-value" id="st-clock">–</span></div>
+        <div class="stat"><span class="stat-label">Verbindung</span><span class="stat-value" id="st-conn">–</span></div>
+        <div class="stat stat-ends"><span class="stat-label">Ende</span><span class="ends" id="st-ends">–</span></div>
+      </section>
+
+      <section class="context" id="context" aria-label="Kontext"></section>
+
+      <section class="controls" id="controls" data-grip="right" aria-label="Steuerung">
+        <button class="btn btn-prominent tint-blue ctl-sign" id="b-sign" type="button">
+          <svg class="i"><use href="#i-sign" /></svg><span>SCHILD ZEIGEN</span>
+        </button>
+        <button class="btn tint-orange ctl-text" id="b-text" type="button" aria-pressed="false">
+          <svg class="i"><use href="#i-text" /></svg><span>CUSTOM TEXT</span>
+        </button>
+        <button class="btn tint-blue ctl-standby" id="b-standby" type="button" aria-pressed="false">
+          <svg class="i"><use href="#i-standby" /></svg><span>GLEICH DU</span>
+        </button>
+        <button class="btn tint-red ctl-cut" id="b-cut" type="button" aria-pressed="false">
+          <svg class="i"><use href="#i-cut" /></svg><span class="btn-label"><span id="b-cut-text">SCHLUSS</span><small>halten</small></span>
+        </button>
+        <div class="ctl-transport" id="transport" role="group" aria-label="Rundown steuern">
+          <button class="btn tint-green tbtn" id="t-start" type="button" aria-label="Start: Show starten (halten)">
+            <svg class="i solid"><use href="#i-play" /></svg><span class="btn-label"><span id="t-start-text">START</span><small>halten</small></span>
+          </button>
+          <button class="btn tint-blue tbtn" id="t-next" type="button" aria-label="Next: nächster Cue (halten)">
+            <svg class="i solid"><use href="#i-skip-next" /></svg><span class="btn-label"><span>NEXT</span><small>halten</small></span>
+          </button>
+          <button class="btn btn-gray tbtn" id="t-pause" type="button" aria-label="Pause (halten)">
+            <svg class="i"><use href="#i-pause" /></svg><span class="btn-label"><span id="t-pause-text">PAUSE</span><small>halten</small></span>
+          </button>
+          <button class="btn btn-gray tbtn" id="t-prev" type="button" aria-label="Zurück: vorheriger Cue (halten)">
+            <svg class="i solid"><use href="#i-skip-prev" /></svg><span class="btn-label"><span>ZURÜCK</span><small>halten</small></span>
+          </button>
+          <button class="btn tint-blue tbtn ctl-stretch" id="b-stretch" type="button" aria-label="Zeit hinzufügen">
+            <svg class="i"><use href="#i-plus-time" /></svg><span class="btn-label"><span>ZEIT +</span><small>hinzufügen</small></span>
+          </button>
+          <button class="btn btn-gray ctl-marker" id="b-marker" type="button">
+            <svg class="i"><use href="#i-marker" /></svg><span>MARKER</span>
+          </button>
+        </div>
+        <div class="ctl-manual" id="manual-slot">
+          <button class="btn tint-orange" id="b-manual" type="button" hidden>
+            <span class="btn-label"><span>MANUELL</span><small>halten</small></span>
+          </button>
+          <button class="btn tint-orange" id="b-prev" type="button" aria-label="Vorheriger Cue (halten)" hidden>
+            <svg class="i"><use href="#i-prev" /></svg>
+          </button>
+          <button class="btn tint-orange" id="b-next" type="button" aria-label="Nächster Cue (halten)" hidden>
+            <svg class="i"><use href="#i-next" /></svg>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Schild -->
+    <main id="sign" class="sign force-dark" data-state="idle" hidden>
+      <div class="sign-fill" aria-hidden="true"></div>
+      <div class="sign-frame" aria-hidden="true"></div>
+      <div class="sign-inner">
+        <div class="sign-top" id="sign-top">
+          <svg class="i sign-icon" id="sign-icon" hidden><use href="#i-wrap" /></svg>
+          <span class="sign-word" id="sign-word"></span>
+        </div>
+        <div class="sign-msg" id="sign-msg" hidden>
+          <img class="sign-msg-gif" id="sign-msg-gif" alt="" hidden />
+          <div class="sign-msg-textbox" id="sign-msg-textbox"><div class="sign-msg-text" id="sign-msg-text"></div></div>
+        </div>
+        <div class="sign-box" id="sign-box">
+          <span class="sign-digits" id="sign-digits" role="timer" aria-live="off"></span>
+        </div>
+        <div class="sign-cue" id="sign-cue"></div>
+        <div class="sign-bar" aria-hidden="true"><div class="sign-bar-fill" id="sign-bar"></div></div>
+      </div>
+      <div class="sign-status" id="sign-status"></div>
+      <div class="sign-hint" id="sign-hint" hidden>1 s halten zum Verlassen</div>
+    </main>
+
+    <!-- Vollbild-Stapel: vorher · jetzt · danach -->
+    <main id="stack" class="stack force-dark" data-state="idle" hidden aria-label="Vollbild-Stapel">
+      <div class="stk-band stk-prev" id="stk-prev"></div>
+      <section class="stk-now" id="stk-now">
+        <div class="stk-head"><div class="stk-head-l" id="stk-head"></div><span class="stk-word" id="stk-word" hidden></span></div>
+        <div class="stk-msg" id="stk-msg" hidden><img class="stk-msg-gif" id="stk-msg-gif" alt="" hidden /><div class="stk-msg-text" id="stk-msg-text"></div></div>
+        <div class="stk-time">
+          <div class="stk-box" id="stk-box"><span class="stk-digits" id="stk-digits" role="timer" aria-live="off"></span></div>
+          <div class="stk-side" id="stk-side"></div>
+        </div>
+        <div class="stk-bar"><div class="stk-bar-fill" id="stk-bar"></div></div>
+      </section>
+      <div class="stk-band stk-next" id="stk-next"></div>
+      <div class="sign-hint stk-hint" id="stk-hint" hidden>1 s halten zum Verlassen</div>
+    </main>
+
+    <!-- Einstellungen (Sheet) -->
+    <!-- Häuschen über Schild und Stapel: zurück zum Rundown -->
+    <a class="icon-btn mode-gear mode-gear-float" id="mode-gear-float" href="/" data-route="editor" aria-label="Zurück zum Rundown" title="Zurück zum Rundown" hidden>
+      <svg class="i"><use href="#i-house" /></svg>
+    </a>
+
+    <dialog id="settings" class="sheet" aria-labelledby="settings-title">
+      <form method="dialog" class="sheet-inner">
+        <header class="sheet-nav">
+          <h2 id="settings-title">Einstellungen</h2>
+          <button class="nav-done" value="close" type="submit">Fertig</button>
+        </header>
+        <div class="sheet-scroll">
+          <section class="group">
+            <h3 class="group-header">Bedienung</h3>
+            <div class="group-body">
+              <div class="row">
+                <span>Griffhand</span>
+                <div class="segmented compact" role="radiogroup" aria-label="Griffhand" id="set-grip">
+                  <button type="button" role="radio" data-value="left">Links</button>
+                  <button type="button" role="radio" data-value="right">Rechts</button>
+                </div>
+              </div>
+              <label class="row"><span>Querformat zeigt Schild</span><input type="checkbox" class="switch" id="set-rotate" /></label>
+              <div class="row">
+                <span>Erscheinungsbild</span>
+                <div class="segmented compact" role="radiogroup" aria-label="Erscheinungsbild" id="set-appearance">
+                  <button type="button" role="radio" data-value="dark">Dunkel</button>
+                  <button type="button" role="radio" data-value="light">Hell</button>
+                </div>
+              </div>
+            </div>
+            <p class="group-footer">Die Griffhand legt CUSTOM TEXT und SCHLUSS auf ihre Seite. Das Schild ist immer dunkel.</p>
+          </section>
+
+          <section class="group">
+            <h3 class="group-header">Showtag</h3>
+            <div class="group-body">
+              <div class="row"><span>Display wach halten</span><span class="row-value" id="set-wake">–</span></div>
+              <div class="row"><span>Uhr-Abgleich</span><span class="row-value" id="set-sync">–</span></div>
+              <div class="row"><span>Rundown-Quelle</span><span class="row-value" id="set-source">–</span></div>
+              <div class="row"><span>Cue-Startzeit aus</span><span class="row-value" id="set-starthow">–</span></div>
+            </div>
+            <p class="group-footer">Für 12 Stunden Show: Dauerstrom, Automatische Sperre „Nie“, Geführter Zugriff an, True Tone und Night Shift aus.</p>
+          </section>
+
+          <section class="group">
+            <h3 class="group-header">Export</h3>
+            <div class="group-body">
+              <button class="row row-link row-btn" type="button" id="exp-csv">Nachbericht (CSV)</button>
+              <div class="row">
+                <span>Bildrate</span>
+                <div class="segmented compact" role="radiogroup" aria-label="Bildrate" id="set-fps">
+                  <button type="button" role="radio" data-value="25">25</button>
+                  <button type="button" role="radio" data-value="30">30</button>
+                  <button type="button" role="radio" data-value="50">50</button>
+                </div>
+              </div>
+              <button class="row row-link row-btn" type="button" id="exp-edl">Marker für DaVinci Resolve (EDL)</button>
+              <button class="row row-link row-btn" type="button" id="exp-edl-tod">Marker mit Uhrzeit-Timecode (EDL)</button>
+            </div>
+            <p class="group-footer">Resolve: Timeline › Import › Timeline Markers from EDL. Standard: 01:00:00:00 = erster Cue.</p>
+          </section>
+
+          <section class="group">
+            <h3 class="group-header">Weitere Ansichten</h3>
+            <div class="group-body">
+              <button class="row row-link row-btn" type="button" id="set-stack">Vollbild-Stapel zeigen</button>
+              <a class="row row-link" href="/" data-route="stapel" target="_blank">Vollbild-Stapel in neuem Fenster</a>
+              <a class="row row-link" href="/" data-route="schild" target="_blank">Schild in neuem Fenster</a>
+              <a class="row row-link" href="/" data-route="aufnahmeleitung">Aufnahmeleitung</a>
+              <a class="row row-link" href="/" data-route="regie">Regie</a>
+              <a class="row row-link" href="/" data-route="editor">Zurück zum Rundown</a>
+            </div>
+            <p class="group-footer" id="set-version"></p>
+          </section>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Streckzeit wählen (SwiftUI: confirmationDialog) -->
+    <dialog id="rundown-sheet" class="sheet rundown-sheet" aria-labelledby="rd-title">
+      <form method="dialog" class="sheet-inner">
+        <header class="sheet-nav">
+          <button class="nav-plain" type="button" id="rd-jump">Zu JETZT</button>
+          <div class="rd-head">
+            <h2 id="rd-title">Rundown</h2>
+            <p class="t-footnote secondary" id="rd-info"></p>
+          </div>
+          <button class="nav-done" value="close" type="submit">Fertig</button>
+        </header>
+        <div class="rd-filters" id="rd-filters" role="toolbar" aria-label="Filter"></div>
+        <p class="t-footnote rd-hint" id="rd-hint" hidden></p>
+        <div class="rd-scroll">
+          <button type="button" class="rd-now" id="rd-now" aria-label="Zum aktuellen Cue" hidden></button>
+          <div class="tl" id="rd-list"></div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="stretch-sheet" class="sheet stretch-sheet" aria-labelledby="stretch-title">
+      <form method="dialog" class="sheet-inner">
+        <header class="stretch-head">
+          <h2 id="stretch-title">Zeit</h2>
+          <p class="t-subheadline secondary" id="stretch-info"></p>
+        </header>
+        <div class="stretch-grid" id="stretch-presets" role="group" aria-label="Schnellwahl">
+          <button class="btn tint-blue" type="button" data-ms="30000">0:30</button>
+          <button class="btn tint-blue" type="button" data-ms="60000">1:00</button>
+          <button class="btn tint-blue" type="button" data-ms="120000">2:00</button>
+          <button class="btn tint-blue" type="button" data-ms="300000">5:00</button>
+        </div>
+        <div class="stretch-custom">
+          <div class="picker" aria-label="Zeit, Minuten und Sekunden">
+            <div class="picker-band" aria-hidden="true"></div>
+            <div id="wheel-min"></div>
+            <span class="picker-colon" aria-hidden="true">:</span>
+            <div id="wheel-sec"></div>
+          </div>
+          <div class="picker-units t-footnote secondary" aria-hidden="true"><span>Min</span><span>Sek</span></div>
+          <div class="stretch-confirm">
+            <button class="btn btn-prominent tint-blue" type="submit" id="stretch-add-btn" value="add" disabled>
+              <span class="btn-label"><span id="stretch-add-text">Um 00:00 erweitern</span><small>Zeit hinzufügen</small></span>
+            </button>
+            <button class="btn tint-orange" type="submit" id="stretch-set-btn" value="set" disabled>
+              <span class="btn-label"><span id="stretch-set-text">Auf 00:00 setzen</span><small>Restzeit setzen</small></span>
+            </button>
+          </div>
+        </div>
+        <button class="btn btn-gray stretch-cancel" type="submit" value="cancel">Abbrechen</button>
+      </form>
+    </dialog>
+
+    <!-- Custom Text fürs Schild -->
+    <dialog id="text-sheet" class="sheet text-sheet" aria-labelledby="text-title">
+      <form method="dialog" class="sheet-inner">
+        <header class="sheet-nav">
+          <button class="nav-plain" type="submit" value="cancel">Abbrechen</button>
+          <h2 id="text-title">Custom Text</h2>
+          <button class="nav-done" type="submit" value="show" id="text-show">Anzeigen</button>
+        </header>
+        <div class="sheet-scroll">
+          <div class="fmt-bar" role="toolbar" aria-label="Formatierung">
+            <button type="button" class="fmt-btn" data-cmd="bold" aria-label="Fett"><b>B</b></button>
+            <button type="button" class="fmt-btn" data-cmd="italic" aria-label="Kursiv"><i>I</i></button>
+            <button type="button" class="fmt-btn" data-cmd="underline" aria-label="Unterstrichen"><u>U</u></button>
+            <span class="fmt-sep" aria-hidden="true"></span>
+            <button type="button" class="fmt-swatch c-white" data-color="#ffffff" aria-label="Weiß"></button>
+            <button type="button" class="fmt-swatch c-yellow" data-color="#ffd600" aria-label="Gelb"></button>
+            <button type="button" class="fmt-swatch c-orange" data-color="#ff9230" aria-label="Orange"></button>
+            <button type="button" class="fmt-swatch c-red" data-color="#ff4245" aria-label="Rot"></button>
+            <button type="button" class="fmt-swatch c-green" data-color="#30d158" aria-label="Grün"></button>
+            <button type="button" class="fmt-swatch c-blue" data-color="#0091ff" aria-label="Blau"></button>
+            <span class="fmt-sep" aria-hidden="true"></span>
+            <button type="button" class="fmt-btn fmt-upper" id="fmt-upper" aria-pressed="false" aria-label="Großbuchstaben">AA</button>
+            <button type="button" class="fmt-btn" data-cmd="removeFormat" aria-label="Formatierung entfernen">⌫</button>
+          </div>
+          <div class="editor" id="text-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Text für das Schild" data-placeholder="Text für den Moderator …"></div>
+          <div class="msg-mode">
+            <span class="t-subheadline secondary">Auf dem Schild</span>
+            <div class="segmented compact" role="radiogroup" aria-label="Anzeige auf dem Schild" id="msg-mode">
+              <button type="button" role="radio" data-value="with" aria-checked="true">Text + Restzeit</button>
+              <button type="button" role="radio" data-value="only" aria-checked="false">Nur Text</button>
+            </div>
+          </div>
+          <div class="quick-texts" id="quick-texts" aria-label="Schnelltexte">
+            <button type="button">LAUTER</button>
+            <button type="button">LANGSAMER</button>
+            <button type="button">MIKRO!</button>
+            <button type="button">KAMERA 2</button>
+            <button type="button">WERBUNG ANSAGEN</button>
+            <button type="button">GAST VORSTELLEN</button>
+          </div>
+
+          <section class="gif-section">
+            <h3 class="group-header">GIF</h3>
+            <div class="gif-selected" id="gif-selected" hidden>
+              <img id="gif-selected-img" alt="" />
+              <button type="button" class="btn btn-gray" id="gif-remove">GIF entfernen</button>
+            </div>
+            <div class="gif-search">
+              <svg class="i"><use href="#i-search" /></svg>
+              <input type="search" id="gif-query" placeholder="Giphy durchsuchen oder Link einfügen" autocomplete="off" enterkeyhint="search" />
+            </div>
+            <div class="segmented compact gif-type" role="radiogroup" aria-label="Art" id="gif-type">
+              <button type="button" role="radio" data-value="gifs" aria-checked="true">GIFs</button>
+              <button type="button" role="radio" data-value="stickers" aria-checked="false">Sticker</button>
+            </div>
+            <p class="t-footnote secondary" id="gif-hint"></p>
+            <div class="gif-grid" id="gif-grid"></div>
+            <p class="giphy-attr">Powered by GIPHY</p>
+          </section>
+
+          <button class="btn tint-red text-hide" type="submit" value="hide" id="text-hide" hidden>Vom Schild ausblenden</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="undo" id="undo" role="status" aria-live="polite" hidden><span id="undo-text"></span><button type="button" id="undo-btn">Widerrufen</button></div>
+    <svg class="hold-ring" id="hold-ring" viewBox="0 0 112 112" aria-hidden="true"><circle class="track" cx="56" cy="56" r="50" /><circle class="prog" cx="56" cy="56" r="50" /></svg>
+  </body>
+</html>
