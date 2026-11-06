@@ -63,6 +63,9 @@ button { cursor: pointer; }
 
 /* ---------- Topbar */
 .topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 28px; height: 62px; padding: 0 max(20px, 4vw); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
+/* Als App auf dem Home-Bildschirm (iPad/iPhone): Statusleiste (Uhrzeit, Akku) liegt über der Seite –
+   Kopfleiste und alles, was oben klebt, um den sicheren Bereich nach unten schieben */
+:root { --sat: env(safe-area-inset-top, 0px); --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px); }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-cond); font-weight: 700; font-size: 22px; letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; }
 .brand .ico { width: 28px; height: 28px; }
 .nav { display: flex; gap: 6px; }
@@ -337,7 +340,7 @@ textarea.input { height: auto; padding: 10px 14px; resize: vertical; }
 .toast.err { background: var(--red); color: #fff; }
 .toast.ok { background: var(--green); color: #04130a; }
 
-.conn { position: fixed; z-index: 450; top: 70px; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 99px; background: var(--yellow); color: #1a1500; font-size: 13px; font-weight: 600; }
+.conn { position: fixed; z-index: 450; top: calc(70px + var(--sat)); left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 99px; background: var(--yellow); color: #1a1500; font-size: 13px; font-weight: 600; }
 
 /* ---------- Public */
 .public-banner { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; }
@@ -742,7 +745,7 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
   .perm-yes { width: 20px; height: 20px; }
 }
 .me .ver { color: var(--muted); letter-spacing: .02em; text-transform: none; }
-.update-banner { position: fixed; z-index: 480; top: 64px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--accent); box-shadow: var(--shadow); font-size: 14px; white-space: nowrap; }
+.update-banner { position: fixed; z-index: 480; top: calc(64px + var(--sat)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--accent); box-shadow: var(--shadow); font-size: 14px; white-space: nowrap; }
 .update-banner .ico { width: 16px; height: 16px; color: var(--accent-2); }
 
 /* ===== Rundown-Übersicht (v1.7) ===== */
@@ -875,7 +878,7 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
 .qr-full .qr-img { width: min(70vh, 86vw); height: min(70vh, 86vw); padding: 18px; border-radius: 24px; cursor: default; }
 .qr-full-label { font-family: var(--font-cond); font-weight: 700; font-size: 26px; text-transform: uppercase; color: #fff; }
 .qr-full-url { font-family: var(--font-mono); font-size: 14px; color: #a1a1aa; word-break: break-all; }
-.qr-full-x { position: fixed; top: 16px; right: 16px; color: #fff; background: rgba(255, 255, 255, .1); width: 44px; height: 44px; }
+.qr-full-x { position: fixed; top: calc(16px + var(--sat)); right: 16px; color: #fff; background: rgba(255, 255, 255, .1); width: 44px; height: 44px; }
 
 /* ===== API-Dialog (v1.7) ===== */
 .api-hero { padding: 16px; border-radius: 16px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
@@ -974,6 +977,7 @@ body { background: radial-gradient(1200px 500px at 85% -10%, color-mix(in srgb, 
 
 /* ---------- Topbar */
 .topbar { height: 60px; gap: 18px; background: var(--glass); backdrop-filter: saturate(160%) blur(14px); -webkit-backdrop-filter: saturate(160%) blur(14px); border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent); padding: 0 max(16px, 2vw); }
+.topbar { box-sizing: content-box; padding-top: var(--sat); padding-left: max(16px, 2vw, var(--sal)); padding-right: max(16px, 2vw, var(--sar)); }
 .brand { gap: 11px; }
 .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--accent-grad); color: #fff; box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--accent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .25); flex: none; }
 .brand-mark .ico { width: 19px; height: 19px; }
@@ -1070,7 +1074,7 @@ h1, .h1 { letter-spacing: .015em; }
 
 /* ---------- Login */
 .auth-wrap { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(360px, 480px); gap: 0; padding: 0; place-items: stretch; background: var(--bg); }
-.auth-theme { position: fixed; top: 16px; right: 16px; z-index: 5; }
+.auth-theme { position: fixed; top: calc(16px + var(--sat)); right: 16px; z-index: 5; }
 .auth-side { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 28px; padding: 60px clamp(30px, 6vw, 90px); overflow: hidden;
   background: radial-gradient(900px 500px at 10% 0%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 65%), radial-gradient(700px 500px at 100% 100%, color-mix(in srgb, #2563eb 22%, transparent), transparent 60%), #07070a; color: #fff; border-right: 1px solid var(--border); }
 .auth-side::after { content: ''; position: absolute; inset: 0; background-image: linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px); background-size: 40px 40px; mask-image: radial-gradient(600px 400px at 30% 40%, #000, transparent); pointer-events: none; }
@@ -1195,7 +1199,7 @@ h1, .h1 { letter-spacing: .015em; }
   .rd-page.following #rows { padding-bottom: 55vh; }
 }
 @media (min-width: 601px) {
-  .live-bar { position: sticky; top: 70px; z-index: 40; background: var(--card-bg); }
+  .live-bar { position: sticky; top: calc(70px + var(--sat)); z-index: 40; background: var(--card-bg); }
   .live-bar::before { content: ''; position: absolute; left: -2px; right: -2px; top: -14px; height: 13px; background: var(--bg); pointer-events: none; } /* endet über dem Rand, verdeckt ihn nicht */
 }
 /* Eigenes Logo */

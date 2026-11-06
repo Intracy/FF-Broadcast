@@ -1,7 +1,7 @@
 /* Änderungsverlauf – Seitenleiste rechts */
 .hx-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 120; width: min(420px, 100vw); display: flex; flex-direction: column; background: var(--bg-2); border-left: 1px solid var(--border-2); box-shadow: -20px 0 50px -20px rgba(0, 0, 0, .55); transform: translateX(102%); transition: transform .2s cubic-bezier(.2, .8, .2, 1); }
 .hx-panel.open { transform: none; }
-.hx-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 16px 12px 18px; border-bottom: 1px solid var(--border); }
+.hx-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: calc(16px + var(--sat, 0px)) 16px 12px 18px; border-bottom: 1px solid var(--border); }
 .hx-title { display: flex; align-items: center; gap: 11px; }
 .hx-title > .ico { width: 20px; height: 20px; color: var(--accent-2); }
 .hx-title b { display: block; font-size: 16px; }
