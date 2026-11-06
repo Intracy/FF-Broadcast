@@ -305,6 +305,7 @@ Auf dem Server im App-Ordner (der Server darf weiterlaufen):
 node server/reset-password.js --list                    # Benutzer anzeigen
 node server/reset-password.js admin@example.de          # temporäres Passwort erzeugen und anzeigen
 node server/reset-password.js admin@example.de --admin  # zusätzlich (wieder) zum Admin machen
+node server/reset-password.js admin@example.de --owner  # zum Super-Admin machen (Passwort bleibt)
 node server/reset-password.js admin@example.de --link   # Reset-Link statt Passwort (24 Std.)
 ```
 
