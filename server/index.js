@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR } from './db.js';
+import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR, ensureOwner } from './db.js';
 import * as hist from './history.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can, rank } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
@@ -178,6 +178,7 @@ const userOut = (u) => {
     id: u.id, email: u.email, name: u.name, role: u.role, created_at: u.created_at, last_login: u.last_login,
     must_change: !!u.must_change,
     restricted: !!u.restricted && u.role !== 'admin',
+    owner: !!u.is_owner,
     share_count: Q.accessCount.get(u.id).n,
     pending: String(u.password_hash).startsWith(NO_PASSWORD), // Einladung noch nicht angenommen
     open_link: open ? { purpose: open.purpose, expires_at: open.expires_at } : null,
@@ -362,6 +363,7 @@ POST('/api/auth/setup', async (req, res) => {
   if (!EMAIL_RE.test(email || '')) fail(400, 'Bitte gültige E-Mail-Adresse angeben');
   if (String(password || '').length < 8) fail(400, 'Passwort muss mindestens 8 Zeichen haben');
   const { lastInsertRowid } = Q.insertUser.run(email.trim(), (name || '').trim(), await hashPassword(password), 'admin');
+  ensureOwner(); // der erste Benutzer ist der Super-Admin
   const u = Q.userById.get(lastInsertRowid);
   const token = setSession(req, res, u);
   return { user: userOut(u), token };
@@ -477,9 +479,13 @@ PUT('/api/users/:id/access/:rundownId', need('admin'), (req) => {
 });
 
 // ---------- Benutzer (Admin)
+/** Den Super-Admin darf nur er selbst ändern (Rolle, Zugang, Passwort, E-Mail) */
+const protectOwner = (u, req) => { if (u.is_owner && u.id !== req.user.id) fail(403, 'Den Super-Admin kann nur er selbst bearbeiten'); };
+
 POST('/api/users/:id/reset-link', need('admin'), (req) => {
   const u = Q.userById.get(Number(req.params.id));
   if (!u) fail(404, 'Benutzer nicht gefunden');
+  protectOwner(u, req);
   const purpose = String(u.password_hash).startsWith(NO_PASSWORD) ? 'invite' : 'reset';
   const link = createResetLink(u.id, purpose, req.body.hours, req.user.email);
   return { ...link, user: userOut(Q.userById.get(u.id)) };
@@ -521,6 +527,13 @@ POST('/api/users', need('admin'), async (req) => {
 PATCH('/api/users/:id', need('admin'), async (req) => {
   const u = Q.userById.get(Number(req.params.id));
   if (!u) fail(404, 'Benutzer nicht gefunden');
+  protectOwner(u, req);
+  // Selbst aussperren verhindern: eigene Rolle und „extern“ nur durch einen anderen Admin
+  if (u.id === req.user.id) {
+    if (req.body.role !== undefined && req.body.role !== u.role) fail(400, 'Die eigene Rolle kann nur ein anderer Admin ändern');
+    if (req.body.restricted) fail(400, 'Du kannst dich nicht selbst auf extern stellen');
+  }
+  if (u.is_owner && ((req.body.role !== undefined && req.body.role !== 'admin') || req.body.restricted)) fail(400, 'Der Super-Admin bleibt immer Admin – zuerst den Super-Admin übertragen');
   const { email, name, role, password } = req.body;
   const upd = {};
   if (email !== undefined) {
@@ -554,10 +567,29 @@ DELETE('/api/users/:id', need('admin'), (req) => {
   const u = Q.userById.get(Number(req.params.id));
   if (!u) fail(404, 'Benutzer nicht gefunden');
   if (u.id === req.user.id) fail(400, 'Du kannst dich nicht selbst löschen');
+  if (u.is_owner) fail(400, 'Der Super-Admin kann nicht gelöscht werden – zuerst den Super-Admin übertragen');
   if (u.role === 'admin' && Q.adminCount.get().n <= 1) fail(400, 'Der letzte Admin kann nicht gelöscht werden');
   Q.deleteUser.run(u.id);
   kickUser(u.id);
   return { ok: true };
+});
+
+// Super-Admin übertragen: nur der aktuelle Super-Admin, mit seinem Passwort bestätigt
+POST('/api/users/:id/make-owner', need('admin'), async (req) => {
+  if (!req.user.is_owner) fail(403, 'Nur der Super-Admin kann diese Rolle übertragen');
+  const u = Q.userById.get(Number(req.params.id));
+  if (!u) fail(404, 'Benutzer nicht gefunden');
+  if (u.id === req.user.id) fail(400, 'Du bist bereits Super-Admin');
+  if (String(u.password_hash).startsWith(NO_PASSWORD)) fail(400, 'Dieser Benutzer hat seine Einladung noch nicht angenommen');
+  if (!(await verifyPassword(String(req.body.password || ''), req.user.password_hash))) fail(400, 'Passwort ist falsch');
+  tx(() => {
+    db.prepare('UPDATE users SET is_owner=0 WHERE id=?').run(req.user.id);
+    db.prepare("UPDATE users SET is_owner=1, role='admin', restricted=0 WHERE id=?").run(u.id);
+  });
+  console.log(`[Sicherheit] Super-Admin übertragen von ${req.user.email} an ${u.email}`);
+  if (u.role !== 'admin' || u.restricted) kickUser(u.id); // neue Rechte sofort laden
+  notifyAccess(u.id);
+  return userOut(Q.userById.get(u.id));
 });
 
 // ---------- Rundowns

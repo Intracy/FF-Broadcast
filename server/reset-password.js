@@ -6,6 +6,7 @@
 //   node server/reset-password.js <email> <neues-passwort>
 //   node server/reset-password.js <email> --admin         (zusätzlich zum Admin machen)
 //   node server/reset-password.js <email> --link          (Reset-Link statt Passwort, 24 Std. gültig)
+//   node server/reset-password.js <email> --owner         (zum Super-Admin machen, ohne Passwort-Reset)
 //
 // Docker:  docker exec -it ff-rundown node server/reset-password.js <email>
 // Der Server darf dabei weiterlaufen. Der Benutzer wird auf allen Geräten abgemeldet und muss
@@ -28,6 +29,7 @@ if (flags.has('--help') || (!email && !flags.has('--list'))) {
   node server/reset-password.js <email> <passwort>     bestimmtes temporäres Passwort setzen
   node server/reset-password.js <email> --admin        zusätzlich Admin-Rechte geben
   node server/reset-password.js <email> --link         Reset-Link statt Passwort (24 Std.)
+  node server/reset-password.js <email> --owner        zum Super-Admin machen (Passwort bleibt)
 
   Optional: DATA_DIR=/pfad/zum/data   (Standard: ./data)
 `);
@@ -52,7 +54,7 @@ const { hashPassword } = await import('./auth.js');
 if (flags.has('--list')) {
   const rows = Q.users.all();
   console.log('');
-  for (const u of rows) console.log(`  ${u.role.padEnd(9)} ${u.email}${u.name ? `  (${u.name})` : ''}${u.must_change ? '  [muss Passwort ändern]' : ''}`);
+  for (const u of rows) console.log(`  ${(u.is_owner ? 'SUPER' : u.role).padEnd(9)} ${u.email}${u.name ? `  (${u.name})` : ''}${u.must_change ? '  [muss Passwort ändern]' : ''}`);
   console.log(`\n  ${rows.length} Benutzer\n`);
   process.exit(0);
 }
@@ -61,6 +63,14 @@ const u = Q.userByEmail.get(email.trim());
 if (!u) {
   console.error(`\n  Kein Benutzer mit der E-Mail „${email}“. Mit --list alle anzeigen.\n`);
   process.exit(1);
+}
+
+if (flags.has('--owner')) {
+  // Notfall: Super-Admin direkt auf dem Server setzen (wer Zugriff auf den Server hat, darf das)
+  db.prepare('UPDATE users SET is_owner=0 WHERE is_owner=1').run();
+  db.prepare("UPDATE users SET is_owner=1, role='admin', restricted=0, token_version=token_version+1 WHERE id=?").run(u.id);
+  console.log(`\n  ${u.email} ist jetzt Super-Admin (und Admin). Bitte einmal neu anmelden.\n`);
+  if (!newPassword && !flags.has('--link')) process.exit(0);
 }
 
 if (flags.has('--admin') && u.role !== 'admin') {

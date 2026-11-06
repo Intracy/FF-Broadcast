@@ -103,7 +103,22 @@ for (const sql of [
   'ALTER TABLE users ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0',
   "ALTER TABLE items ADD COLUMN script TEXT NOT NULL DEFAULT ''", // Skript für den Prompter
   "ALTER TABLE rundowns ADD COLUMN al_log TEXT NOT NULL DEFAULT '[]'", // Protokoll der Aufnahmeleitung (Marker, Signale, Cues)
+  'ALTER TABLE users ADD COLUMN is_owner INTEGER NOT NULL DEFAULT 0', // Super-Admin (genau eine Person)
 ]) { try { db.exec(sql); } catch { /* Spalte existiert bereits */ } }
+
+/**
+ * Super-Admin: Es gibt immer genau einen. Fehlt er (Update von älterer Version, erster Benutzer),
+ * wird automatisch der älteste Admin zum Super-Admin. Er ist immer Admin und nie extern.
+ */
+export function ensureOwner() {
+  const owners = db.prepare('SELECT id FROM users WHERE is_owner=1 ORDER BY id').all();
+  if (owners.length > 1) db.prepare('UPDATE users SET is_owner=0 WHERE is_owner=1 AND id<>?').run(owners[0].id);
+  if (owners.length) { db.prepare("UPDATE users SET role='admin', restricted=0 WHERE id=?").run(owners[0].id); return owners[0].id; }
+  const first = db.prepare("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1").get();
+  if (first) db.prepare('UPDATE users SET is_owner=1, restricted=0 WHERE id=?').run(first.id);
+  return first?.id ?? null;
+}
+ensureOwner();
 
 // Freigaben einzelner Rundowns für einzelne Benutzer (z. B. externe Dienstleister)
 db.exec(`CREATE TABLE IF NOT EXISTS rundown_access (

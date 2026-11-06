@@ -169,7 +169,7 @@ function topbar(active) {
     themeToggle(),
     h('button', { class: 'user-btn', title: 'Konto', onclick: (e) => userMenu(e.currentTarget) },
       h('span', { class: `avatar sm role-${S.user.role}` }, initials(S.user)),
-      h('span', { class: 'user-btn-txt' }, h('b', null, S.user.name || S.user.email.split('@')[0]), h('span', null, S.user.restricted ? 'Extern' : ROLE_LABEL[S.user.role])),
+      h('span', { class: 'user-btn-txt' }, h('b', null, S.user.name || S.user.email.split('@')[0]), h('span', null, S.user.owner ? 'Super-Admin' : S.user.restricted ? 'Extern' : ROLE_LABEL[S.user.role])),
       icon('chevronDown')));
 }
 
@@ -614,7 +614,9 @@ async function viewUsers() {
   shell('users', h('div', { class: 'page page-narrow users-page' },
     h('div', { class: 'page-head' },
       h('div', null, h('div', { class: 'label' }, 'Verwaltung'), h('h1', null, 'Benutzer'), sub),
-      h('button', { class: 'btn primary', onclick: () => userForm() }, icon('plus'), 'Benutzer hinzufügen')),
+      h('div', { class: 'page-actions' },
+        S.user.owner ? h('button', { class: 'btn', title: 'Super-Admin an eine andere Person übertragen', onclick: () => transferOwner() }, icon('shield'), h('span', { class: 'lbl' }, 'Super-Admin übertragen')) : null,
+        h('button', { class: 'btn primary', onclick: () => userForm() }, icon('plus'), 'Benutzer hinzufügen'))),
     h('div', { class: 'user-tools' }, h('div', { class: 'search' }, icon('users'), search), chips),
     list,
     h('section', { class: 'card perm-card' },
@@ -623,7 +625,8 @@ async function viewUsers() {
         h('thead', null, h('tr', null, h('th', null, ''), ROLES.slice().reverse().map((r) => h('th', null, h('span', { class: `role-badge role-${r}` }, ROLE_LABEL[r]))))),
         h('tbody', null, PERMS.map(([label, roles]) => h('tr', null, h('td', null, label),
           ROLES.slice().reverse().map((r) => h('td', null, roles.includes(r) ? h('span', { class: 'perm-yes' }, icon('check')) : h('span', { class: 'perm-no' }, '–')))))))),
-      h('p', { class: 'hint', style: { margin: '12px 4px 6px' } }, h('b', null, 'Externe Benutzer'), ' (z. B. Dienstleister) sehen nur Rundowns, die ihnen freigegeben werden – die Rolle wird pro Rundown vergeben (Schloss-Symbol bzw. „Freigaben“ im Rundown).'))));
+      h('p', { class: 'hint', style: { margin: '12px 4px 6px' } }, h('b', null, 'Super-Admin'), ' – genau eine Person, immer Admin mit Zugriff auf alles. Er kann nicht gelöscht, herabgestuft oder auf extern gestellt werden und nur von sich selbst bearbeitet werden. Übertragen kann ihn nur der Super-Admin selbst (Knopf oben). Niemand kann die eigene Rolle ändern oder sich selbst auf extern stellen – so sperrt sich keiner versehentlich aus.'),
+      h('p', { class: 'hint', style: { margin: '6px 4px 6px' } }, h('b', null, 'Externe Benutzer'), ' (z. B. Dienstleister) sehen nur Rundowns, die ihnen freigegeben werden – die Rolle wird pro Rundown vergeben (Schloss-Symbol bzw. „Freigaben“ im Rundown).'))));
 
   const draw = () => {
     const counts = Object.fromEntries(ROLES.map((r) => [r, users.filter((u) => u.role === r).length]));
@@ -648,10 +651,14 @@ async function viewUsers() {
         },
       }, ROLES.slice().reverse().map((r) => h('option', { value: r, selected: r === u.role }, ROLE_LABEL[r])));
       if (u.restricted) { sel.disabled = true; sel.title = 'Externe Benutzer haben Rollen pro Rundown – siehe Schloss-Symbol'; sel.replaceChildren(h('option', null, 'pro Rundown')); sel.className = 'role-select role-viewer'; }
+      else if (u.owner) { sel.disabled = true; sel.title = 'Der Super-Admin ist immer Admin'; }
+      else if (me) { sel.disabled = true; sel.title = 'Die eigene Rolle kann nur ein anderer Admin ändern'; }
+      const lockedOwner = u.owner && !me;
       return h('div', { class: 'user-row' },
         h('div', { class: `avatar role-${u.role}` + (u.online ? ' is-online' : '') }, initials(u)),
         h('div', { class: 'u-info' },
           h('div', { class: 'u-name' }, u.name || u.email.split('@')[0], me ? h('span', { class: 'tag' }, 'Du') : null,
+            u.owner ? h('span', { class: 'st-badge owner-badge', title: 'Super-Admin – hat immer vollen Zugriff, kann nicht gelöscht oder herabgestuft werden' }, icon('shield'), 'Super-Admin') : null,
             u.restricted ? h('span', { class: 'st-badge bk-ext', title: 'Sieht nur freigegebene Rundowns' }, icon('lock'), `Extern · ${u.share_count} ${u.share_count === 1 ? 'Rundown' : 'Rundowns'}`) : null,
             !u.restricted && u.share_count ? h('span', { class: 'st-badge', title: 'Zusätzliche Rechte in einzelnen Rundowns' }, icon('lock'), `+${u.share_count} Freigabe${u.share_count === 1 ? '' : 'n'}`) : null,
             u.pending ? h('span', { class: 'st-badge st-upcoming', title: u.open_link ? 'Einladungslink gültig bis ' + new Date(u.open_link.expires_at).toLocaleString('de-DE') : 'Einladungslink abgelaufen – neuen erzeugen' }, icon('send'), u.open_link ? 'Einladung offen' : 'Einladung abgelaufen') : null,
@@ -663,10 +670,10 @@ async function viewUsers() {
           ? h('div', { class: 'u-last is-online', title: `${u.online_devices} ${u.online_devices === 1 ? 'Gerät' : 'Geräte'}` }, h('span', { class: 'lbl' }, 'Status'), h('span', { class: 'online-txt' }, h('i', { class: 'on-dot' }), 'Jetzt online'))
           : h('div', { class: 'u-last', title: u.last_login ? new Date(u.last_login.replace(' ', 'T') + 'Z').toLocaleString('de-DE') : '' }, h('span', { class: 'lbl' }, 'Letzter Login'), relTime(u.last_login)),
         h('div', { class: 'u-actions' },
-          h('button', { class: 'icon-btn', title: 'Bearbeiten', onclick: () => userForm(u) }, icon('edit')),
+          h('button', { class: 'icon-btn', title: lockedOwner ? 'Den Super-Admin kann nur er selbst bearbeiten' : 'Bearbeiten', disabled: lockedOwner, onclick: () => userForm(u) }, icon('edit')),
           u.role !== 'admin' ? h('button', { class: 'icon-btn', title: 'Rundown-Freigaben', onclick: () => userAccessModal(u, load) }, icon('lock')) : null,
-          h('button', { class: 'icon-btn', title: 'Zugang zurücksetzen (Reset-Link oder temporäres Passwort)', onclick: () => resetPassword(u) }, icon('key')),
-          h('button', { class: 'icon-btn del', title: me ? 'Du kannst dich nicht selbst löschen' : 'Löschen', disabled: me, onclick: async () => {
+          lockedOwner ? null : h('button', { class: 'icon-btn', title: 'Zugang zurücksetzen (Reset-Link oder temporäres Passwort)', onclick: () => resetPassword(u) }, icon('key')),
+          h('button', { class: 'icon-btn del', title: me ? 'Du kannst dich nicht selbst löschen' : u.owner ? 'Der Super-Admin kann nicht gelöscht werden' : 'Löschen', disabled: me || u.owner, onclick: async () => {
             if (!(await confirmDialog(`${u.name || u.email} (${u.email}) wird gelöscht und sofort abgemeldet.`, { title: 'Benutzer löschen?' }))) return;
             try { await api('DELETE', '/api/users/' + u.id); toast('Benutzer gelöscht', 'ok'); load(); } catch (ex) { toast(ex.message, 'err'); }
           } }, icon('trash'))));
@@ -709,7 +716,37 @@ async function viewUsers() {
     return seg;
   };
 
+  /** Super-Admin an eine andere Person übertragen (mit eigenem Passwort bestätigt) */
+  const transferOwner = () => {
+    const cands = users.filter((x) => x.id !== S.user.id && !x.pending);
+    if (!cands.length) { toast('Es gibt noch keinen anderen Benutzer mit aktivem Zugang', 'err'); return; }
+    const pick = h('select', { class: 'input', required: true }, h('option', { value: '' }, 'Person auswählen …'),
+      cands.map((x) => h('option', { value: x.id }, `${x.name || x.email} · ${x.restricted ? 'Extern' : ROLE_LABEL[x.role]}`)));
+    const pw = h('input', { class: 'input', type: 'password', required: true, autocomplete: 'current-password', placeholder: 'Dein Passwort' });
+    const err = h('div', { class: 'form-error' });
+    const form = h('form', null,
+      h('div', { class: 'access-info' }, icon('shield'), h('div', null, h('b', null, 'Es gibt immer genau einen Super-Admin.'),
+        h('span', null, 'Die ausgewählte Person wird Super-Admin (und Admin mit Zugriff auf alles). Du bleibst Admin, verlierst aber den Super-Admin – zurück geht es nur, wenn die neue Person ihn wieder überträgt.'))),
+      h('label', { class: 'field' }, h('span', null, 'Neuer Super-Admin'), pick),
+      h('label', { class: 'field' }, h('span', null, 'Zur Bestätigung dein Passwort'), pw),
+      err,
+      h('div', { class: 'modal-foot', style: { padding: '6px 0 0' } },
+        h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close() }, 'Abbrechen'),
+        h('button', { class: 'btn primary', type: 'submit' }, icon('shield'), 'Übertragen')));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); err.textContent = '';
+      try {
+        const res = await api('POST', `/api/users/${pick.value}/make-owner`, { password: pw.value });
+        m.close();
+        toast(`${res.name || res.email} ist jetzt Super-Admin`, 'ok');
+        const st = await api('GET', '/api/auth/status'); S.user = st.user; router();
+      } catch (ex) { err.textContent = ex.message; }
+    });
+    const m = modal({ title: 'Super-Admin übertragen', body: form });
+  };
+
   const userForm = (u) => {
+    const selfLocked = !!u && (u.id === S.user.id || u.owner);
     const err = h('div', { class: 'form-error' });
     const email = h('input', { class: 'input', type: 'email', name: 'email', required: true, value: u?.email || '', autocomplete: 'off' });
     const name = h('input', { class: 'input', name: 'name', value: u?.name || '', placeholder: 'z. B. Max Mustermann', autocomplete: 'off' });
@@ -747,10 +784,13 @@ async function viewUsers() {
       u ? null : h('div', { class: 'field' }, h('span', null, 'Zugang'),
         accessToggle([['invite', 'Einladungslink', 'link'], ['password', 'Passwort festlegen', 'key']], mode, (k) => { mode = k; drawAccess(); }),
         accessBox),
-      h('div', { class: 'field' }, h('span', null, 'Sichtbare Rundowns'),
+      selfLocked ? h('div', { class: 'access-info' }, icon(u.owner ? 'shield' : 'lock'), h('div', null,
+          h('b', null, u.owner ? 'Super-Admin – immer Admin mit Zugriff auf alle Rundowns.' : `Rolle: ${ROLE_LABEL[u.role]}`),
+          h('span', null, u.owner ? 'Rolle und Zugang lassen sich nicht ändern. Zum Abgeben „Super-Admin übertragen“ verwenden.' : 'Die eigene Rolle und den Zugang kann nur ein anderer Admin ändern – so sperrst du dich nicht versehentlich aus.')))
+      : [h('div', { class: 'field' }, h('span', null, 'Sichtbare Rundowns'),
         accessToggle([['all', 'Alle Rundowns', 'list'], ['restricted', 'Nur freigegebene (extern)', 'lock']], scope, (k) => { scope = k; drawScope(); }),
         scopeInfo),
-      roleField,
+      roleField],
       err,
       h('div', { class: 'modal-foot', style: { padding: '6px 0 0' } },
         h('button', { class: 'btn ghost', type: 'button', onclick: () => m.close() }, 'Abbrechen'),
@@ -760,12 +800,12 @@ async function viewUsers() {
       err.textContent = '';
       const body = { email: email.value, name: name.value, role: scope === 'restricted' ? (u && u.role !== 'admin' ? u.role : 'viewer') : role.get(), restricted: scope === 'restricted' };
       if (body.restricted && role.get() === 'admin' && scope !== 'restricted') body.restricted = false;
+      if (selfLocked) { delete body.role; delete body.restricted; }
       if (!u) {
         if (mode === 'invite') Object.assign(body, { invite: true, hours: Number(hours.value) });
         else Object.assign(body, { password: pw.input.value, must_change: must.checked });
       }
       try {
-        if (u && u.id === S.user.id && body.role !== 'admin' && !(await confirmDialog('Du entziehst dir selbst die Admin-Rechte.', { okLabel: 'Trotzdem speichern', title: 'Eigene Rolle ändern?' }))) return;
         const res = u ? await api('PATCH', '/api/users/' + u.id, body) : await api('POST', '/api/users', body);
         m.close();
         if (u && u.id === S.user.id) { const st = await api('GET', '/api/auth/status'); S.user = st.user; return router(); }
