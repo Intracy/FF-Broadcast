@@ -118,6 +118,12 @@ h2 { font-family: var(--font-cond); font-weight: 700; text-transform: uppercase;
 .btn-group .btn:first-child:not(:last-child) { border-radius: 10px 0 0 10px; }
 
 .input, input.input, select.input, textarea.input { height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border-2); background: var(--surface); color: var(--text); outline: none; width: 100%; }
+.page-actions { display: flex; gap: 8px; align-items: center; }
+/* iOS: Datums-/Zeitfelder haben sonst eine feste Mindestbreite und ragen aus dem Dialog */
+input.input[type=date], input.input[type=time], input.input[type=datetime-local] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; text-align: left; }
+input.input[type=date]::-webkit-date-and-time-value, input.input[type=time]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+.field, .form-grid > * { min-width: 0; }
+@supports (-webkit-touch-callout: none) { input.input[type=date], input.input[type=time] { line-height: 42px; } }
 textarea.input { height: auto; padding: 10px 14px; resize: vertical; }
 .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 .field { display: grid; gap: 6px; margin-bottom: 14px; }
@@ -718,8 +724,12 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
   .user-row .u-last { grid-area: last; text-align: right; align-self: center; }
   .user-row .u-actions .icon-btn { width: 36px; height: 36px; }
   .form-grid, .role-pick { grid-template-columns: 1fr; }
-  .page-head .btn.primary { width: 100%; justify-content: center; }
   .page-head > div:first-child { flex: 1; }
+  /* Übersicht: Importieren und Neuer Rundown nebeneinander unter dem Titel */
+  .page-head .page-actions { width: 100%; }
+  .page-head .page-actions .btn { height: 44px; justify-content: center; }
+  .page-head .page-actions .btn.primary { flex: 1; }
+  .page-head > .btn.primary { width: 100%; justify-content: center; }
 }
 @media (max-width: 600px) {
   .perm-card { padding: 14px 10px 4px; }
