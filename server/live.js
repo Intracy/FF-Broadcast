@@ -2,6 +2,10 @@
 // Pause: pausedAt = Zeitpunkt der Pause; beim Fortsetzen wird die Pausenzeit beim laufenden Punkt
 // herausgerechnet (itemStartedAt verschoben) und in pausedMs für die Gesamtabweichung gesammelt.
 //
+// Probe-Modus: live.mode = 'probe' | 'show'. Beim Beenden wird jeder Lauf gesichert –
+// die letzte Show in live.show, Proben in live.probes (die letzten PROBES_MAX). So bleiben die
+// echten Ist-Zeiten der Show für den Nachbericht sauber, auch wenn danach noch geprobt wird.
+//
 // Aufnahmeleitung (live.al): Signale fürs Schild (GLEICH DU, SCHLUSS, STRECKEN), eigener Text
 // und Marker. Was für Nachbericht und Marker-Export protokolliert werden soll, landet in
 // live._events; der Server hängt es an das AL-Protokoll an und entfernt das Feld wieder.
@@ -9,6 +13,15 @@
 const AL_SIGNALS = ['wrap', 'cut', 'standby'];
 const emptySignals = () => ({ wrap: false, cut: false, standby: false, stretchAt: null });
 const clip = (v, n) => String(v ?? '').slice(0, n);
+export const PROBES_MAX = 10;
+
+/** Abgeschlossenen Lauf sichern (nur, wenn wirklich etwas gemessen wurde) */
+function archiveRun(live, now) {
+  if (!live.running || !live.startedAt || !Object.keys(live.history || {}).length) return;
+  const run = { mode: live.mode === 'probe' ? 'probe' : 'show', startedAt: live.startedAt, endedAt: now, history: { ...live.history }, pausedMs: live.pausedMs || 0 };
+  if (run.mode === 'show') live.show = run;
+  else live.probes = [...(live.probes || []), run].slice(-PROBES_MAX);
+}
 
 export function parseLive(str) {
   try { return str ? JSON.parse(str) : {}; } catch { return {}; }
@@ -53,6 +66,7 @@ export function applyLiveAction(items, live0, action, arg = {}, now = Date.now()
     log({ type: 'stretch', ms: ((live.adjust || 0) - before) * 1000, totalMs: (live.adjust || 0) * 1000 });
   };
   const stop = () => {
+    archiveRun(live, now);
     live.running = false;
     live.currentId = null;
     live.itemStartedAt = null;
@@ -65,6 +79,7 @@ export function applyLiveAction(items, live0, action, arg = {}, now = Date.now()
   const start = (item) => {
     if (!item) return;
     live.running = true;
+    live.mode = arg.mode === 'probe' ? 'probe' : 'show';
     live.startedAt = now;
     live.endedAt = null;
     live.history = {};
@@ -73,7 +88,7 @@ export function applyLiveAction(items, live0, action, arg = {}, now = Date.now()
     live.starts = {};
     live.adjusts = {};
     live.al = { signals: emptySignals(), message: null, markers: 0 };
-    events.push({ at: now, type: 'reset' }); // neuer Lauf: Nachbericht und Marker beginnen neu
+    events.push({ at: now, type: 'reset', ...(live.mode === 'probe' ? { probe: true } : {}) }); // neuer Lauf: Nachbericht und Marker beginnen neu
     setCurrent(item);
   };
   const pause = () => { live.pausedAt = now; log({ type: 'pause' }); };
@@ -152,7 +167,13 @@ export function applyLiveAction(items, live0, action, arg = {}, now = Date.now()
       stop();
       break;
     case 'reset':
-      return { _events: [{ at: now, type: 'reset' }] };
+      // Live-Zustand zurücksetzen – gesicherte Show- und Probezeiten bleiben erhalten
+      return { show: live.show, probes: live.probes, _events: [{ at: now, type: 'reset' }] };
+    case 'clearRuns':
+      // Gesicherte Läufe löschen (nur Probe oder alle)
+      if (arg.which === 'probes' || arg.which === 'all') delete live.probes;
+      if (arg.which === 'show' || arg.which === 'all') delete live.show;
+      break;
     // ---- Aufnahmeleitung
     case 'alSignal': {
       // GLEICH DU / SCHLUSS / FERTIG WERDEN fürs Schild – nur mit laufendem Punkt

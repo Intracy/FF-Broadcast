@@ -110,6 +110,7 @@ export function liveStatus(items, live, now = Date.now()) {
   const delta = actualOffset - planned + Math.max(elapsed, eff) - (cur.duration || 0);
   return {
     running: true,
+    probe: live.mode === 'probe',
     paused: !!live.pausedAt,
     pausedFor: live.pausedAt ? Math.max(0, (now - live.pausedAt) / 1000) : 0,
     current: cur,

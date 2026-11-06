@@ -382,9 +382,10 @@ async function viewRundowns() {
     const st = rdStatus(r);
     return h('span', { class: `st-badge st-${st}` }, st === 'live' ? null : null, st === 'upcoming' || st === 'past' ? whenText(r) : STATUS[st][0]);
   };
-  const livePanel = (r) => r.live ? h('div', { class: 'ov-live' },
+  const livePanel = (r) => r.live ? h('div', { class: 'ov-live' + (r.live_probe ? ' probe' : '') },
     h('div', { class: 'ov-live-top' },
       h('span', { class: 'dot' }),
+      r.live_probe ? h('span', { class: 'probe-tag' }, 'Probe') : null,
       h('span', { class: 'ov-live-title' }, r.live_title ? `${r.live_index}. ${r.live_title}` : 'Live'),
       h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' })),
     h('div', { class: 'progress' }, h('span', { style: { width: (r.live_progress || 0) + '%' } }))) : null;
@@ -411,7 +412,7 @@ async function viewRundowns() {
     h('div', { class: 'ov-row-main' },
       h('div', { class: 'ov-row-title' }, h('b', null, r.title), statusBadge(r), r.public_enabled ? h('span', { class: 'st-badge st-public' }, icon('globe')) : null,
         avatarStack(othersOnline(r), { title: 'Gerade geöffnet von ' + othersOnline(r).map((p) => p.name).join(', ') })),
-      r.live ? h('div', { class: 'ov-row-live' }, h('span', { class: 'dot' }), r.live_title ? `${r.live_index}. ${r.live_title}` : 'Live', h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' }))
+      r.live ? h('div', { class: 'ov-row-live' + (r.live_probe ? ' probe' : '') }, h('span', { class: 'dot' }), r.live_probe ? h('span', { class: 'probe-tag' }, 'Probe') : null, r.live_title ? `${r.live_index}. ${r.live_title}` : 'Live', h('span', { class: 'ov-live-rem mono', 'data-rem': r.live_remaining ?? '' }))
         : h('div', { class: 'ov-row-sub' },
           h('span', { class: 'sub-d' }, `${r.block_count} ${r.block_count === 1 ? 'Block' : 'Blöcke'} · geändert ${relTime(r.updated_at)}`),
           h('span', { class: 'sub-m' }, `${r.start_time.slice(0, 5)}–${r.end_time} · ${fmtDuration(r.total, { hours: true })} · ${r.item_count} Punkte`))),
@@ -1624,8 +1625,11 @@ function buildLiveBar() {
   L.startLbl = h('span', { class: 'lbl' }, 'Start');
   L.start = h('button', { class: 'btn green start-btn', onclick: () => {
     const lv = S.rd.live || {};
-    liveAction(!lv.running ? 'start' : lv.pausedAt ? 'resume' : 'pause');
+    if (!lv.running) liveAction('start', probeArmed() ? { mode: 'probe' } : {});
+    else liveAction(lv.pausedAt ? 'resume' : 'pause');
   } }, L.startIco, L.startLbl);
+  // Probe-Modus: vor dem Start umschalten; Probe-Läufe zählen nicht als Show-Zeiten
+  L.probe = op ? h('button', { class: 'probe-chip', title: 'Probe-Modus: Zeiten werden getrennt von der Show gespeichert', onclick: () => { setProbeArmed(!probeArmed()); tick(); } }, icon('timer'), h('span', null, 'Probe')) : null;
   L.prev = h('button', { class: 'btn prev-btn', title: 'Zurück zum vorherigen Punkt', onclick: () => liveAction('prev') }, icon('skipBack'), h('span', { class: 'lbl' }, 'Zurück'));
   L.nextBtn = h('button', { class: 'btn next-btn', onclick: () => liveAction('next') }, icon('play'), h('span', { class: 'lbl' }, 'Weiter'));
   L.stop = h('button', { class: 'btn red stop-btn', title: 'Live beenden', onclick: async () => { if (await confirmDialog('Live-Modus beenden? Die gemessenen Zeiten bleiben sichtbar.', { okLabel: 'Beenden', title: 'Live beenden' })) liveAction('stop'); } }, icon('square'), h('span', { class: 'lbl' }, 'Beenden'));
@@ -1634,6 +1638,7 @@ function buildLiveBar() {
   return L.bar = h('section', { class: 'card live-bar' },
     h('div', { class: 'live-row' },
       h('span', { class: 'title' }, 'Live-Steuerung'),
+      L.probe,
       L.follow = h('button', { class: 'follow-chip', title: 'Aktuellen Punkt automatisch ganz oben halten', onclick: () => toggleFollow() }, icon('follow'), h('span', null, 'Mitlaufen')),
       op ? [stepBtn(-1), L.prev, L.start, L.nextBtn, stepBtn(1), L.stop] : h('span', { class: 'muted' }, 'Nur Anzeige'),
       h('div', { class: 'live-stats' },
@@ -1643,6 +1648,12 @@ function buildLiveBar() {
     L.prog,
     h('div', { class: 'live-now' }, h('span', null, 'Jetzt: ', L.now), h('span', null, 'Als Nächstes: ', L.next)));
 }
+
+/* ---------- Probe-Modus (Auswahl vor dem Start wird pro Rundown im Browser gemerkt) */
+const probeKey = () => 'ffr.probe.' + (S.rd?.rundown.id || '');
+function probeArmed() { try { return localStorage.getItem(probeKey()) === '1'; } catch { return false; } }
+function setProbeArmed(on) { try { localStorage.setItem(probeKey(), on ? '1' : '0'); } catch { /* */ } }
+async function runsModal() { (await import('/js/laeufe.js')).openRuns({ api, rd: () => S.rd, applyPayload, can, liveAction }); }
 
 async function liveAction(action, body = {}) {
   try {
@@ -1780,13 +1791,18 @@ function tick() {
     }
     L.bar?.classList.toggle('is-paused', !!st.paused);
     if (st.running && st.paused) L.now.textContent = 'PAUSE · ' + L.now.textContent;
+    const probe = st.running ? !!st.probe : probeArmed();
+    L.bar?.classList.toggle('is-probe', probe);
+    if (L.probe) { L.probe.classList.toggle('on', probe); L.probe.disabled = !!st.running; L.probe.title = st.running ? (probe ? 'Läuft als Probe' : 'Läuft als Show') : 'Probe-Modus: Zeiten werden getrennt von der Show gespeichert'; }
+    if (st.running && st.probe) L.now.textContent = 'PROBE · ' + L.now.textContent;
     if (L.start) {
-      const mode = !st.running ? 'start' : st.paused ? 'resume' : 'pause';
+      const mode = !st.running ? (probe ? 'probe' : 'start') : st.paused ? 'resume' : 'pause';
       if (L.start.dataset.mode !== mode) {
         L.start.dataset.mode = mode;
         L.startIco.replaceChildren(icon(mode === 'pause' ? 'pause' : mode === 'resume' ? 'play' : 'skipFwd'));
-        L.startLbl.textContent = mode === 'pause' ? 'Pause' : mode === 'resume' ? 'Fortsetzen' : 'Start';
-        L.start.title = mode === 'pause' ? 'Zeit anhalten (Pause)' : mode === 'resume' ? 'Pause beenden – Zeit läuft weiter' : 'Live starten';
+        L.startLbl.textContent = mode === 'pause' ? 'Pause' : mode === 'resume' ? 'Fortsetzen' : mode === 'probe' ? 'Probe starten' : 'Start';
+        L.start.title = mode === 'pause' ? 'Zeit anhalten (Pause)' : mode === 'resume' ? 'Pause beenden – Zeit läuft weiter' : mode === 'probe' ? 'Probedurchlauf starten – Zeiten werden getrennt gespeichert' : 'Live starten';
+        L.start.classList.toggle('probe-btn', mode === 'probe');
         L.start.classList.toggle('green', mode !== 'pause');
         L.start.classList.toggle('pause-btn', mode === 'pause');
         L.start.classList.toggle('pulse', mode === 'resume');
@@ -1906,6 +1922,7 @@ function moreMenu(anchor) {
       ...(can('editor') ? [{ section: 'Verlauf' }, { label: 'Änderungsverlauf', icon: 'history', onClick: toggleHistory }] : []),
     ] : []),
     { section: 'Ansicht' }, ...viewMenu(null).filter((it) => it.label !== 'Live-Ansicht im Vollbild'), // steht schon unter Ausgabe
+    { section: 'Live' }, { label: 'Gemessene Zeiten (Show & Proben) …', icon: 'timer', onClick: runsModal },
     { section: 'Drucken / PDF' }, ...printMenuItems(),
     { section: 'Import / Export' }, ...fileMenuItems(),
   ]);
@@ -2106,6 +2123,7 @@ async function apiModal() {
       content = h('div', { class: 'ep-list' },
         h('div', { class: 'ep-group' }, 'Ablauf'),
         ep('POST', '/start', 'Start', 'Startet beim ersten Punkt (optional ?item=ID); in der Pause: fortsetzen'),
+        ep('POST', '/probe', 'Probe starten', 'Startet einen Probedurchlauf – Zeiten werden getrennt von der Show gespeichert (auch /start?mode=probe)'),
         ep('POST', '/pause', 'Pause', 'Hält die Zeit des laufenden Punkts an'),
         ep('POST', '/resume', 'Fortsetzen', 'Pause beenden, Zeit läuft weiter'),
         ep('POST', '/toggle', 'Start/Pause', 'Ein Knopf für alles: startet, pausiert oder setzt fort (ideal fürs Stream Deck)'),

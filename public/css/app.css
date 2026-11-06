@@ -586,6 +586,7 @@ h1, .h1, .rd-title-input { font-size: clamp(22px, 2.2vw, 30px); }
   /* Steuerung als Raster: oben Zurück · Start/Pause · Weiter (groß), darunter −Zeit · +Zeit · Beenden (klein) */
   .live-bar .live-row { order: 3; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
   .live-bar .live-row > .follow-chip, .live-bar .live-row > .muted { grid-column: 1 / -1; }
+  .live-bar .live-row > .probe-chip { grid-column: 1 / -1; justify-content: center; height: 36px; margin: 0; order: 0; }
   .live-bar .live-row > .live-stats { grid-column: 1 / -1; }
   .live-bar .live-row > .prev-btn { grid-column: span 2; padding: 0 !important; justify-content: center; }
   .live-bar .live-row > .start-btn, .live-bar .live-row > .next-btn { grid-column: span 5; height: 54px !important; font-size: 16px; }
@@ -1172,6 +1173,19 @@ h1, .h1 { letter-spacing: .015em; }
 .follow-chip .ico { width: 14px; height: 14px; }
 .follow-chip:hover { color: var(--text); border-color: var(--muted); }
 .follow-chip.on { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+/* Probe-Modus (Türkis) */
+:root { --probe: #22d3ee; }
+.probe-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; margin-right: 6px; border-radius: 99px; border: 1px dashed var(--border-2); background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.probe-chip .ico { width: 14px; height: 14px; }
+.probe-chip.on { color: var(--probe); border: 1px solid color-mix(in srgb, var(--probe) 60%, transparent); background: color-mix(in srgb, var(--probe) 14%, transparent); }
+.probe-chip:disabled { cursor: default; opacity: .9; }
+.probe-chip:disabled:not(.on) { display: none; }
+.btn.probe-btn { background: var(--probe) !important; color: #032027 !important; }
+.live-bar.is-probe { border-color: color-mix(in srgb, var(--probe) 55%, transparent) !important; background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--probe) 6%, transparent) 0 12px, transparent 12px 24px); }
+.live-bar.is-probe .live-now > span:first-child { color: var(--probe); }
+.probe-tag { flex: none; padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--probe) 18%, transparent); color: var(--probe); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.ov-live.probe { background: color-mix(in srgb, var(--probe) 8%, var(--surface)); border-color: color-mix(in srgb, var(--probe) 30%, transparent); }
+.ov-live.probe .dot, .ov-row-live.probe .dot { background: var(--probe); }
 @media (max-width: 600px) {
   .live-bar .follow-chip { display: none; }
   .rd-page.following #rows { padding-bottom: 55vh; }

@@ -60,7 +60,8 @@ function drawSide() {
   const cols = data.columns;
   const blocks = data.items.filter((i) => i.type === 'block');
   const hasScript = data.items.some((i) => i.type === 'item' && (i.script || '').trim());
-  const hasActual = Object.keys(data.live?.history || {}).length > 0;
+  const sources = actualSources();
+  const hasActual = sources.length > 0;
   const colKey = P.variant === 'dept' ? 'deptCols' : 'cols';
   const chosen = P[colKey] ?? (P.variant === 'dept' ? [] : cols.map((c) => c.id));
   const toggleCol = (id, on) => update({ [colKey]: on ? [...new Set([...chosen, id])] : chosen.filter((x) => x !== id) });
@@ -88,7 +89,9 @@ function drawSide() {
       P.variant === 'dept' ? chk('Nur Punkte mit Eintrag', P.onlyFilled, (v) => update({ onlyFilled: v })) : null,
       P.variant === 'script' ? chk('Jeder Punkt auf neuer Seite', P.pageBreak, (v) => update({ pageBreak: v })) : null,
       P.variant === 'script' ? chk('Punkte ohne Skript weglassen', P.skipEmptyScript, (v) => update({ skipEmptyScript: v })) : null,
-      P.variant !== 'script' && hasActual ? chk('Ist-Zeiten (Nachbericht)', P.actual, (v) => update({ actual: v }), h('span', { class: 'muted' }, 'aus Live')) : null),
+      P.variant !== 'script' && hasActual ? chk('Ist-Zeiten (Nachbericht)', P.actual, (v) => update({ actual: v }), h('span', { class: 'muted' }, 'aus Live')) : null,
+      P.variant !== 'script' && P.actual && sources.length > 1 ? h('select', { class: 'pr-select', title: 'Welcher Durchlauf?', onchange: (e) => update({ actualSrc: e.target.value }) },
+        sources.map((x) => h('option', { value: x.key, selected: x.key === actualSource()?.key }, x.label))) : null),
     P.variant === 'script' && !hasScript ? h('div', { class: 'pr-hint', style: 'margin-bottom:12px' }, 'Noch keine Skripte hinterlegt – im Rundown über das Dokument-Symbol im Programmpunkt eintragen. Ohne Skript wird die Beschreibung gedruckt.') : null,
     h('div', { class: 'pr-actions' },
       h('button', { class: 'btn primary', onclick: () => window.print() }, icon('printer'), 'Drucken / Als PDF speichern'),
@@ -125,13 +128,29 @@ function header(sched, variantLabel) {
       me ? h('div', null, `Gedruckt von ${me.name || me.email}`) : publicToken ? h('div', null, 'Öffentliche Ansicht') : null));
 }
 
+/** Durchläufe mit gemessenen Zeiten: Show, Proben, laufender bzw. letzter Lauf (ältere Daten) */
+function actualSources() {
+  const lv = data.live || {}, out = [];
+  const when = (ms) => (ms ? ' · ' + new Date(ms).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+  if (lv.show && Object.keys(lv.show.history || {}).length) out.push({ key: 'show', label: 'Show' + when(lv.show.startedAt), history: lv.show.history });
+  (lv.probes || []).map((r, i) => ({ key: 'p' + i, label: `Probe ${i + 1}` + when(r.startedAt), history: r.history })).reverse().forEach((x) => out.push(x));
+  const cur = Object.keys(lv.history || {}).length;
+  if (cur && (lv.running || !out.length)) out.unshift({ key: 'current', label: (lv.running ? (lv.mode === 'probe' ? 'Probe (läuft)' : 'Show (läuft)') : 'Letzter Lauf') + when(lv.startedAt), history: lv.history });
+  return out;
+}
+function actualSource() {
+  const all = actualSources();
+  return all.find((x) => x.key === P.actualSrc) || all.find((x) => x.key === 'show') || all[0] || null;
+}
+
 function renderTable(sched) {
   const dept = P.variant === 'dept';
   const colIds = dept ? (P.deptCols || []) : (P.cols ?? data.columns.map((c) => c.id));
   const cols = data.columns.filter((c) => colIds.includes(c.id));
   if (dept && !cols.length) return h('div', { class: 'doc-empty' }, 'Bitte links mindestens eine Spalte für die Abteilung auswählen.');
-  const showActual = P.actual && Object.keys(data.live?.history || {}).length;
-  const hist = data.live?.history || {};
+  const src = actualSource();
+  const showActual = P.actual && !!src;
+  const hist = src?.history || {};
   const inFilter = blockFilter(sched);
   const land = P.orient === 'landscape';
 
@@ -187,7 +206,7 @@ function renderTable(sched) {
     const done = data.items.filter((i) => i.type === 'item' && hist[i.id] != null);
     const plan = done.reduce((a, i) => a + i.duration, 0), real = done.reduce((a, i) => a + hist[i.id], 0);
     sum = h('div', { class: 'doc-sum' }, h('span', null, `${done.length} von ${sched.count} Punkten gemessen`), h('span', null, 'Plan ', h('b', null, fmtDuration(plan, { hours: true }))),
-      h('span', null, 'Ist ', h('b', null, fmtDuration(real, { hours: true }))), h('span', null, 'Abweichung ', h('b', { style: `color:${real - plan > 0 ? 'var(--red)' : 'var(--green)'}` }, fmtDuration(real - plan, { sign: true, hours: Math.abs(real - plan) >= 3600 }))));
+      h('span', null, `Ist${src && src.key !== 'show' ? ' (' + src.label.split(' · ')[0] + ')' : ''} `, h('b', null, fmtDuration(real, { hours: true }))), h('span', null, 'Abweichung ', h('b', { style: `color:${real - plan > 0 ? 'var(--red)' : 'var(--green)'}` }, fmtDuration(real - plan, { sign: true, hours: Math.abs(real - plan) >= 3600 }))));
   }
   return [h('table', { class: 'plan' }, colgroup, head, h('tbody', null, rows)), sum];
 }

@@ -576,7 +576,7 @@ GET('/api/rundowns', need('viewer'), (req) => {
     };
     if (live.running) {
       const st = liveStatus(loadItems(r.id), live, Date.now());
-      if (st.running) Object.assign(out, { live_title: st.current.title, live_index: st.index + 1, live_remaining: Math.round(st.remaining), live_progress: Math.round(st.progress * 100), live_delta: Math.round(st.delta) });
+      if (st.running) Object.assign(out, { live_probe: !!st.probe, live_title: st.current.title, live_index: st.index + 1, live_remaining: Math.round(st.remaining), live_progress: Math.round(st.progress * 100), live_delta: Math.round(st.delta) });
     }
     return out;
   });
@@ -941,6 +941,30 @@ POST('/api/rundowns/:id/live/:action', needRd('operator'), (req) => {
   return { live, serverNow: Date.now() };
 });
 
+// Gemessene Zeiten eines gesicherten Laufs (Show oder Probe) als neue Soll-Dauern übernehmen
+POST('/api/rundowns/:id/apply-times', needRd('editor'), (req) => {
+  const rd = getRundown(req.params.id);
+  const live = parseLive(rd.live);
+  const run = req.body.source === 'probe' ? (live.probes || [])[Number(req.body.index)] : req.body.source === 'current' ? { history: live.history || {} } : live.show;
+  if (!run || !Object.keys(run.history || {}).length) fail(404, 'Für diesen Lauf gibt es keine gemessenen Zeiten');
+  const only = Array.isArray(req.body.ids) ? new Set(req.body.ids.map(Number)) : null;
+  const ops = [];
+  tx(() => {
+    for (const it of loadItems(rd.id)) {
+      const sec = run.history[it.id];
+      if (it.type !== 'item' || sec == null || (only && !only.has(it.id))) continue;
+      const dur = Math.max(0, Math.min(24 * 3600, Math.round(sec)));
+      const d = hist.itemDiff(it, { duration: dur });
+      if (!d) continue;
+      updateRow('items', it.id, { duration: dur }, ['duration']);
+      ops.push({ t: 'item', id: it.id, ...d });
+    }
+  });
+  if (ops.length) hist.record(rd.id, req.user, 'times.apply', req.body.source === 'probe' ? 'Probezeiten' : req.body.source === 'current' ? 'Gemessene Zeiten' : 'Showzeiten', ops);
+  changed(rd.id, req);
+  return { changed: ops.length, ...payload(Q.rdById.get(rd.id)) };
+});
+
 // Protokoll der Aufnahmeleitung (Nachbericht, Marker-Export als EDL)
 GET('/api/rundowns/:id/al-log', needRd('viewer'), (req) => ({ log: alLogOf(getRundown(req.params.id).id), serverNow: Date.now() }));
 
@@ -1035,6 +1059,7 @@ function liveSummary(ctx) {
   return {
     running: !!st.running,
     state: st.running ? (st.paused ? 'paused' : st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running') : live.endedAt ? 'ended' : 'stopped',
+    mode: st.running ? (st.probe ? 'probe' : 'show') : null,
     paused: !!st.paused,
     paused_for_sec: st.paused ? Math.round(st.pausedFor) : 0,
     current_id: st.running ? st.current.id : null,
@@ -1090,6 +1115,7 @@ function companionStatus(rd) {
     rundown: rd.title,
     running: !!st.running,
     state: st.running ? (st.paused ? 'paused' : st.remaining < 0 ? 'overtime' : st.remaining <= 60 ? 'warning' : 'running') : 'stopped',
+    mode: st.running ? (st.probe ? 'probe' : 'show') : null,
     paused: !!st.paused,
     cue_id: st.running ? st.current.id : null,
     title: st.running ? st.current.title : '',
@@ -1116,7 +1142,7 @@ function companionStatus(rd) {
 
 const needTime = (v) => { if (v == null) fail(400, 'Zeitangabe fehlt: seconds=…, minutes=… oder time=mm:ss'); return v; };
 const COMPANION_ACTIONS = {
-  start: ['start', (q) => ({ itemId: q.item ?? q.itemId })], pause: ['pause'], resume: ['resume'], toggle: ['toggle'], playpause: ['toggle'], next: ['next'], prev: ['prev'], back: ['prev'], stop: ['stop'], reset: ['reset'],
+  start: ['start', (q) => ({ itemId: q.item ?? q.itemId, mode: q.mode })], probe: ['start', (q) => ({ itemId: q.item ?? q.itemId, mode: 'probe' })], pause: ['pause'], resume: ['resume'], toggle: ['toggle'], playpause: ['toggle'], next: ['next'], prev: ['prev'], back: ['prev'], stop: ['stop'], reset: ['reset'],
   plus: ['adjust', (q) => ({ seconds: Math.abs(readSeconds(q) ?? 60) })],
   minus: ['adjust', (q) => ({ seconds: -Math.abs(readSeconds(q) ?? 60) })],
   add: ['adjust', (q) => ({ seconds: needTime(readSeconds(q)) })], // vorzeichenbehaftet, z. B. seconds=-30

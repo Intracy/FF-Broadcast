@@ -188,7 +188,7 @@ function render() {
 
   const cls = st.running ? (st.paused ? 'warn' : st.remaining < 0 ? 'over' : st.remaining <= 60 ? 'warn' : '') : '';
   if (st.running) {
-    set(el.state, st.paused ? `Pause · seit ${fmtDuration(st.pausedFor)}` : `Live · Vergangen ${fmtDuration(st.elapsed)}`);
+    set(el.state, (st.probe ? 'Probe · ' : '') + (st.paused ? `Pause · seit ${fmtDuration(st.pausedFor)}` : `${st.probe ? 'Läuft' : 'Live'} · Vergangen ${fmtDuration(st.elapsed)}`));
     set(el.since, fmtTime(st.startedAt, false));
     set(el.delta, fmtDuration(st.delta, { sign: true }));
     el.deltaWrap.className = st.delta > 0.5 ? 'red' : 'green';
