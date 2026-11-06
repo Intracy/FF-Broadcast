@@ -10,7 +10,7 @@ const KIND = {
   'item.del': 'Programmpunkt gelöscht', 'block.del': 'Block gelöscht', 'blockend.del': 'Block-Ende gelöscht',
   'item.edit': 'Geändert', order: 'Reihenfolge geändert', 'rd.edit': 'Rundown geändert',
   'col.add': 'Spalte hinzugefügt', 'col.edit': 'Spalte geändert', 'col.del': 'Spalte gelöscht', 'col.order': 'Spalten sortiert',
-  import: 'Import', restore: 'Stand wiederhergestellt',
+  import: 'Import', restore: 'Stand wiederhergestellt', 'times.apply': 'Gemessene Zeiten übernommen',
 };
 const FIELD = { title: 'Titel', description: 'Beschreibung', script: 'Skript', duration: 'Dauer', color: 'Farbe', type: 'Typ', event_date: 'Datum', start_time: 'Startzeit', name: 'Name', is_public: 'Öffentlich' };
 const TYPE = { item: 'Programmpunkt', block: 'Block', block_end: 'Block-Ende' };

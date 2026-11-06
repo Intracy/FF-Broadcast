@@ -1,0 +1,23 @@
+/* Gemessene Zeiten (Show & Proben) */
+.modal.runs-modal { width: min(1000px, 100%); }
+.runs .hint { margin: 0 0 12px; }
+.runs-table { overflow: auto; border: 1px solid var(--border); border-radius: 12px; max-height: 60vh; }
+.runs-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.runs-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); white-space: nowrap; vertical-align: bottom; }
+.runs-table th small { display: block; text-transform: none; letter-spacing: 0; font-weight: 500; margin-top: 3px; }
+.runs-table td { padding: 7px 10px; border-top: 1px solid var(--border); vertical-align: top; }
+.runs-table .num { text-align: right; font-family: var(--font-mono, monospace); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.runs-table td.num small { display: block; font-size: 11.5px; }
+.runs-table td.plan { color: var(--muted); }
+.runs-table .ttl { min-width: 180px; }
+.runs-table .ttl .nr { display: inline-block; min-width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.runs-table tr.sum td { font-weight: 700; background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+.runs-table tr.acts td { border-top: 0; padding-top: 4px; padding-bottom: 10px; }
+.runs-table .red { color: var(--red-text, #f87171); }
+.runs-table .green { color: var(--green); }
+.run-tag { display: inline-block; padding: 2px 8px; border-radius: 99px; background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red-text, #f87171); }
+.run-tag.probe { background: color-mix(in srgb, var(--cyan, #22d3ee) 18%, transparent); color: var(--cyan, #22d3ee); }
+.runs-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.runs-empty { display: grid; justify-items: center; gap: 6px; padding: 40px 16px; text-align: center; color: var(--muted); }
+.runs-empty .ico { width: 28px; height: 28px; }
+.runs-empty b { color: var(--text); }

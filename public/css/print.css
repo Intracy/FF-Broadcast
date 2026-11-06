@@ -45,6 +45,7 @@ button, input, select { font: inherit; color: inherit; }
 .chk input:checked { background: #7c3aed; border-color: #7c3aed; }
 .chk input:checked::after { content: ''; width: 9px; height: 5px; border: 2px solid #fff; border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
 .chk .muted { color: #8a8a96; font-size: 12px; margin-left: auto; }
+.pr-select { width: 100%; height: 34px; margin: 4px 0 2px; padding: 0 10px; border-radius: 8px; border: 1px solid #26262d; background: #121216; color: #f4f4f6; font-size: 12.5px; }
 .pr-list { max-height: 220px; overflow: auto; padding: 2px 4px; border-radius: 10px; background: #121216; border: 1px solid #1f1f25; }
 .pr-actions { position: sticky; bottom: -30px; margin: 22px -18px -30px; padding: 14px 18px 18px; background: linear-gradient(180deg, rgba(11, 11, 14, 0), #0b0b0e 30%); display: flex; flex-direction: column; gap: 8px; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #26262d; background: #18181c; color: #f4f4f6; font-weight: 600; font-size: 13.5px; cursor: pointer; }
