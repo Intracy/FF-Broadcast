@@ -1277,6 +1277,24 @@ function actionsCell(it, { play = false, insert = true, palette = true } = {}) {
     ed ? h('button', { class: 'icon-btn del', title: 'Löschen', onclick: () => delItem(it.id) }, icon('trash')) : null);
 }
 
+/** Block inkl. Inhalt duplizieren; die Kopie erscheint direkt hinter dem Original */
+async function duplicateItem(it) {
+  flushSaves();
+  try {
+    const r = await api('POST', `/api/items/${it.id}/duplicate`);
+    applyPayload(r);
+    toast(it.type === 'block' ? `Block dupliziert (${r.count} Einträge)` : 'Programmpunkt dupliziert', 'ok');
+    setTimeout(() => {
+      const row = R.rows?.querySelector(`[data-id="${r.id}"]`);
+      if (!row) return;
+      row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      row.classList.add('flash');
+      setTimeout(() => row.classList.remove('flash'), 1600);
+      row.querySelector('input[data-f=title]')?.select();
+    }, 60);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 function buildRow(it) {
   const ed = canEdit();
   const span = { gridColumn: `2 / ${hasActions() ? -2 : -1}` };
@@ -1288,6 +1306,7 @@ function buildRow(it) {
         h('span', { class: 'block-tag' }, 'Block'),
         ed ? h('input', { 'data-f': 'title', placeholder: 'Blockname', spellcheck: 'false' }) : h('div', { class: 'ro-text', 'data-f': 'title' }),
         h('span', { class: 'bmeta', 'data-r': 'bmeta' }),
+        ed ? h('button', { class: 'icon-btn block-dup', type: 'button', title: 'Block mit allen Programmpunkten duplizieren', onclick: (e) => { e.stopPropagation(); duplicateItem(it); } }, icon('copy')) : null,
         h('button', { class: 'icon-btn block-toggle', type: 'button', 'aria-expanded': 'true', onclick: (e) => { e.stopPropagation(); toggleBlock(it.id); } }, icon('chevronDown'))),
       actionsCell(it));
   } else if (it.type === 'block_end') {
