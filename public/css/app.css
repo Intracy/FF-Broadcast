@@ -1248,6 +1248,21 @@ h1, .h1 { letter-spacing: .015em; }
 .auth-forgot { display: flex; gap: 10px; align-items: flex-start; margin: 18px 0 0 !important; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; color: var(--text-2); text-align: left !important; }
 .auth-forgot .ico { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--accent-2); }
 .auth-forgot b { color: var(--text); }
+.link-btn { border: 0; background: none; padding: 0; color: var(--accent-2); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+/* E-Mail-Versand */
+.st-badge.mail-on { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); }
+.mail-grid { margin-top: 14px; }
+.mail-port { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; }
+.mail-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
+.mail-test { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--text-2); }
+.mail-test .input { flex: 1 1 220px; width: auto; }
+.mail-status { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.45; }
+.mail-status .ico { width: 17px; height: 17px; flex: none; margin-top: 1px; }
+.mail-status.ok { background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--text); }
+.mail-status.ok .ico { color: var(--green); }
+.mail-status.err { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--text); }
+.mail-status.err .ico { color: var(--red); }
+@media (max-width: 600px) { .mail-port { grid-template-columns: 1fr; } }
 .u-name .st-badge { margin-left: 2px; }
 
 /* ===== Rechte pro Rundown (feature/rundown-rechte) ===== */

@@ -236,6 +236,11 @@ Dieselben Daten gibt es für angemeldete Benutzer (Cookie oder `Authorization: B
 | `SESSION_SECRET` | auto-generiert | eigener Schlüssel für Sitzungen |
 | `TZ` | System | Zeitzone (für Companion-Uhrzeiten) |
 | `BACKUP_DIR` | `data/backups` | Speicherort der Backups (siehe „Backups“) |
+| `SMTP_HOST` | – | Mailserver; wenn gesetzt, gelten die SMTP-Werte statt der Einstellungen unter *System* |
+| `SMTP_PORT` · `SMTP_SECURE` | `587` · `starttls` | `ssl` für Port 465, `none` nur im lokalen Netz |
+| `SMTP_USER` · `SMTP_PASS` | – | Anmeldung am Mailserver (meist die komplette Adresse) |
+| `SMTP_FROM` · `SMTP_FROM_NAME` | `SMTP_USER` · `FF Rundown` | Absender |
+| `APP_URL` | – | Adresse der App für Links in Mails, z. B. `https://rundown.example.de` |
 
 ## Update auf eine neue Version
 
@@ -286,6 +291,19 @@ Ablage: `data/backups/` (nur für den Server lesbar). Besser zusätzlich auf ein
 Per Variable gesetzte Werte sind in der Oberfläche gesperrt. Backups enthalten Benutzer, Passwort-Hashes und Tokens – heruntergeladene Dateien sicher aufbewahren.
 
 Manuell geht es weiterhin: Server stoppen und den Ordner `data` kopieren.
+
+## E-Mail-Versand (Einladungen, „Passwort vergessen“)
+
+Optional. Unter **System → E-Mail-Versand** trägst du ein Postfach ein (SMTP-Server, Port, Benutzer, Passwort, Absender und die **Adresse der App**, auf die die Links in den Mails zeigen) und prüfst es mit **„Speichern & Testmail senden“**. Das Passwort wird verschlüsselt gespeichert. Alternativ per Umgebungsvariablen (`SMTP_*`, `APP_URL`, siehe „Konfiguration“).
+
+Beispiel Hetzner-Webhosting: Server `mail.your-server.de`, Port `587` mit STARTTLS, Benutzer = komplette E-Mail-Adresse (Knopf „Hetzner-Werte“ füllt das aus).
+
+Danach:
+- **Passwort vergessen?** auf der Anmeldeseite – Link per Mail, 1 Stunde gültig. Die Antwort ist immer gleich (verrät nicht, ob es ein Konto gibt); max. 5 Anfragen je 15 Min. pro Gerät, 1 Mail je 2 Min. pro Konto.
+- **Einladung per E-Mail** beim Anlegen eines Benutzers (der Link wird zusätzlich angezeigt).
+- **Reset-Link per E-Mail** im Schlüssel-Dialog („Per E-Mail senden“).
+
+Ohne Einrichtung funktioniert alles wie bisher über Links zum Weiterschicken. Damit Mails nicht im Spam landen, sollten SPF und DKIM für die Absender-Domain eingerichtet sein.
 
 ## Passwort vergessen / Zugang zurücksetzen
 
