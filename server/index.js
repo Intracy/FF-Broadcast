@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR, ensureOwner } from './db.js';
 import * as hist from './history.js';
 import * as mail from './mail.js';
+import * as audit from './audit.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can, rank } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
 import * as backup from './backup.js';
@@ -132,6 +133,13 @@ function readBody(req, limit = 2 * 1024 * 1024) {
 
 const clientIp = (req) =>
   (TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()) || req.socket.remoteAddress;
+/** Kurzbeschreibung des Geräts für das Protokoll, z. B. „Safari · iPhone“ */
+function uaShort(req) {
+  const ua = String(req.headers['user-agent'] || '');
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : '';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : ua ? 'App/Browser' : '';
+  return [br, os].filter(Boolean).join(' · ') || null;
+}
 const isSecure = (req) =>
   COOKIE_SECURE ? COOKIE_SECURE === 'true' : !!req.socket.encrypted || (TRUST_PROXY && req.headers['x-forwarded-proto'] === 'https');
 
@@ -369,6 +377,7 @@ POST('/api/auth/forgot', (req) => {
   const email = String(req.body.email || '').trim();
   if (!EMAIL_RE.test(email)) fail(400, 'Bitte gültige E-Mail-Adresse angeben');
   const u = Q.userByEmail.get(email);
+  audit.log('forgot', { target: email, ip, detail: { known: !!u } });
   if (u && !(forgotUser.get(u.id) > now - 2 * 60000)) {
     forgotUser.set(u.id, now);
     const invite = String(u.password_hash).startsWith(NO_PASSWORD);
@@ -389,6 +398,7 @@ POST('/api/auth/setup', async (req, res) => {
   const { lastInsertRowid } = Q.insertUser.run(email.trim(), (name || '').trim(), await hashPassword(password), 'admin');
   ensureOwner(); // der erste Benutzer ist der Super-Admin
   const u = Q.userById.get(lastInsertRowid);
+  audit.log('setup', { actor: u, target: u.email, ip: clientIp(req) });
   const token = setSession(req, res, u);
   return { user: userOut(u), token };
 });
@@ -400,10 +410,12 @@ POST('/api/auth/login', async (req, res) => {
   const u = Q.userByEmail.get(String(email || '').trim());
   if (!u || !(await verifyPassword(String(password || ''), u.password_hash))) {
     noteFail(ip);
+    audit.log('login_fail', { target: String(email || '').trim().slice(0, 200), ip, ok: false, detail: { known: !!u } });
     fail(401, 'E-Mail oder Passwort falsch');
   }
   attempts.delete(ip);
   Q.touchLogin.run(u.id);
+  audit.log('login', { actor: u, target: u.email, ip, detail: { ua: uaShort(req) } });
   const token = setSession(req, res, u);
   return { user: userOut(u), token };
 });
@@ -422,6 +434,7 @@ POST('/api/auth/password', need('viewer'), async (req, res) => {
   const u = Q.userById.get(req.user.id);
   kickUser(u.id);
   setSession(req, res, u);
+  audit.log('password_self', { actor: u, target: u.email, ip: clientIp(req) });
   notifyPasswordChanged(u);
   return { ok: true };
 });
@@ -463,6 +476,7 @@ POST('/api/reset/:token', async (req, res) => {
   kickUser(u.id);
   setSession(req, res, u);
   console.log(`[Sicherheit] Passwort für ${u.email} über ${rec.r.purpose === 'invite' ? 'Einladungslink' : 'Reset-Link'} gesetzt`);
+  audit.log(wasInvite ? 'invite_accepted' : 'reset_used', { actor: u, target: u.email, ip });
   if (!wasInvite) notifyPasswordChanged(u);
   return { user: userOut(u) };
 });
@@ -472,7 +486,7 @@ function notifyPasswordChanged(u) {
   if (String(u.password_hash).startsWith(NO_PASSWORD)) return;
   const owner = db.prepare('SELECT name, email FROM users WHERE is_owner=1').get();
   const contact = owner && owner.email !== u.email ? `${owner.name ? owner.name + ' ' : ''}(${owner.email})` : 'einem Admin';
-  mail.notify(mail.passwordChangedMail(u, contact), 'Hinweis „Passwort geändert“');
+  mail.notify(mail.passwordChangedMail(u, contact), 'Hinweis „Passwort geändert“', 'password');
 }
 
 // ---------- Freigaben pro Rundown (nur Admin)
@@ -489,7 +503,7 @@ function setShare(rid, userId, role, by) {
   notifyAccess(u.id);
   // Mail nur, wenn der Rundown für diese Person neu sichtbar wird (nicht bei Rollenwechseln)
   if (role && !before && roleFor(u, rd.id) && !String(u.password_hash).startsWith(NO_PASSWORD)) {
-    mail.notify(mail.shareMail(u, rd, role, by.name || by.email), 'Freigabe-Mail');
+    mail.notify(mail.shareMail(u, rd, role, by.name || by.email), 'Freigabe-Mail', 'share');
   }
 }
 
@@ -539,6 +553,7 @@ POST('/api/users/:id/reset-link', need('admin'), async (req) => {
   const purpose = String(u.password_hash).startsWith(NO_PASSWORD) ? 'invite' : 'reset';
   const link = createResetLink(u.id, purpose, req.body.hours, req.user.email);
   const sent = req.body.send_mail ? await sendLinkMail(u, link, req) : {};
+  audit.log('reset_link', { actor: req.user, target: u.email, ip: clientIp(req), detail: { tn: u.name, purpose, hours: link.hours, mail: !!sent.mail_sent } });
   return { ...link, ...sent, user: userOut(Q.userById.get(u.id)) };
 });
 
@@ -546,6 +561,7 @@ DELETE('/api/users/:id/reset-link', need('admin'), (req) => {
   const u = Q.userById.get(Number(req.params.id));
   if (!u) fail(404, 'Benutzer nicht gefunden');
   Q.revokeResets.run(u.id);
+  audit.log('reset_revoked', { actor: req.user, target: u.email, ip: clientIp(req), detail: { tn: u.name } });
   return userOut(u);
 });
 
@@ -569,12 +585,15 @@ POST('/api/users', need('admin'), async (req) => {
     const link = createResetLink(Number(lastInsertRowid), 'invite', hours ?? 168, req.user.email);
     const nu = Q.userById.get(lastInsertRowid);
     const sent = req.body.send_mail ? await sendLinkMail(nu, link, req) : {};
+    audit.log('user_invited', { actor: req.user, target: nu.email, ip: clientIp(req), detail: { tn: nu.name, role, restricted: !!nu.restricted, mail: !!sent.mail_sent } });
     return { ...userOut(nu), link, ...sent };
   }
   if (String(password || '').length < 8) fail(400, 'Passwort muss mindestens 8 Zeichen haben');
   const { lastInsertRowid } = Q.insertUserFull.run(email.trim(), (name || '').trim(), await hashPassword(password), role, must_change === false ? 0 : 1);
   if (restricted && role !== 'admin') db.prepare('UPDATE users SET restricted=1 WHERE id=?').run(lastInsertRowid);
-  return userOut(Q.userById.get(lastInsertRowid));
+  const nu = Q.userById.get(lastInsertRowid);
+  audit.log('user_created', { actor: req.user, target: nu.email, ip: clientIp(req), detail: { tn: nu.name, role, restricted: !!nu.restricted } });
+  return userOut(nu);
 });
 
 PATCH('/api/users/:id', need('admin'), async (req) => {
@@ -614,6 +633,11 @@ PATCH('/api/users/:id', need('admin'), async (req) => {
   if (upd.token_version) kickUser(u.id);
   else if (upd.restricted !== undefined && upd.restricted !== u.restricted) notifyAccess(u.id);
   if (upd.password_hash && !String(u.password_hash).startsWith(NO_PASSWORD)) notifyPasswordChanged(Q.userById.get(u.id));
+  const ip = clientIp(req), tn = upd.name ?? u.name, tgt = upd.email ?? u.email;
+  if (upd.email !== undefined && upd.email.toLowerCase() !== u.email.toLowerCase()) audit.log('email_changed', { actor: req.user, target: tgt, ip, detail: { tn, from: u.email } });
+  if (upd.role !== undefined && upd.role !== u.role) audit.log('role_changed', { actor: req.user, target: tgt, ip, detail: { tn, from: u.role, to: upd.role } });
+  if (upd.restricted !== undefined && upd.restricted !== u.restricted && (upd.role ?? u.role) !== 'admin') audit.log('restricted_changed', { actor: req.user, target: tgt, ip, detail: { tn, restricted: !!upd.restricted } });
+  if (upd.password_hash) audit.log(u.id === req.user.id ? 'password_self' : 'password_admin', { actor: req.user, target: tgt, ip, detail: { tn, temp: !!upd.must_change } });
   return userOut(Q.userById.get(u.id));
 });
 
@@ -625,6 +649,7 @@ DELETE('/api/users/:id', need('admin'), (req) => {
   if (u.role === 'admin' && Q.adminCount.get().n <= 1) fail(400, 'Der letzte Admin kann nicht gelöscht werden');
   Q.deleteUser.run(u.id);
   kickUser(u.id);
+  audit.log('user_deleted', { actor: req.user, target: u.email, ip: clientIp(req), detail: { tn: u.name, role: u.role } });
   return { ok: true };
 });
 
@@ -641,15 +666,31 @@ POST('/api/users/:id/make-owner', need('admin'), async (req) => {
     db.prepare("UPDATE users SET is_owner=1, role='admin', restricted=0 WHERE id=?").run(u.id);
   });
   console.log(`[Sicherheit] Super-Admin übertragen von ${req.user.email} an ${u.email}`);
+  audit.log('owner', { actor: req.user, target: u.email, ip: clientIp(req), detail: { tn: u.name } });
   if (u.role !== 'admin' || u.restricted) kickUser(u.id); // neue Rechte sofort laden
   notifyAccess(u.id);
-  mail.notify(mail.ownerMail(u, req.user.name || req.user.email), 'Super-Admin-Mail');
+  mail.notify(mail.ownerMail(u, req.user.name || req.user.email), 'Super-Admin-Mail', 'owner');
   return userOut(Q.userById.get(u.id));
 });
 
 // ---------- E-Mail-Versand (System, nur Admin)
 GET('/api/system/mail', need('admin'), () => mail.publicSettings());
-PUT('/api/system/mail', need('admin'), (req) => { try { return mail.saveSettings(req.body); } catch (e) { fail(400, e.message); } });
+PUT('/api/system/mail', need('admin'), (req) => {
+  let r;
+  try { r = mail.saveSettings(req.body); } catch (e) { fail(400, e.message); }
+  audit.log('mail_settings', { actor: req.user, ip: clientIp(req), detail: { host: r.host, from: r.from_email, pass_changed: !!req.body.pass } });
+  return r;
+});
+GET('/api/system/notify', need('admin'), () => ({ ...mail.getNotify(), mail_enabled: mail.enabled() }));
+PUT('/api/system/notify', need('admin'), (req) => {
+  const before = mail.getNotify();
+  const r = mail.saveNotify(req.body);
+  const changed = Object.keys(r).filter((k) => r[k] !== before[k]);
+  if (changed.length) audit.log('notify_settings', { actor: req.user, ip: clientIp(req), detail: Object.fromEntries(changed.map((k) => [k, r[k]])) });
+  return { ...r, mail_enabled: mail.enabled() };
+});
+GET('/api/system/audit', need('admin'), (req) => audit.list({ cat: req.query.cat, q: req.query.q, before: req.query.before, limit: req.query.limit }));
+GET('/api/system/audit/summary', need('admin'), () => audit.summary());
 POST('/api/system/mail/test', need('admin'), async (req) => {
   const to = String(req.body.to || req.user.email).trim();
   try { await mail.send(mail.testMail(to)); } catch (e) { fail(400, 'Testmail fehlgeschlagen: ' + e.message); }
@@ -1007,7 +1048,10 @@ POST('/api/history/:cid/restore', needRd('editor', ridOfChange), (req) => {
 
 GET('/api/history/settings', need('admin'), () => hist.status());
 PATCH('/api/history/settings', need('admin'), (req) => {
-  try { return hist.setRetention(req.body.retention_days); } catch (e) { fail(400, e.message); }
+  let r;
+  try { r = hist.setRetention(req.body.retention_days); } catch (e) { fail(400, e.message); }
+  audit.log('history_settings', { actor: req.user, ip: clientIp(req), detail: { retention_days: Number(req.body.retention_days) } });
+  return r;
 });
 
 // ---------- Öffentlicher Link & Companion-Token
@@ -1037,6 +1081,7 @@ POST('/api/rundowns/:id/companion/regenerate', needRd('editor'), (req) => {
     companion_rotated_by: req.user.email,
   }, ['companion_token', 'companion_rotated_at', 'companion_rotated_by']);
   console.log(`[Sicherheit] Companion-/API-Token für Rundown ${rd.id} („${rd.title}“) neu erzeugt von ${req.user.email}`);
+  audit.log('token_new', { actor: req.user, target: rd.title, ip: clientIp(req), detail: { rid: rd.id } });
   return companionInfo(Q.rdById.get(rd.id));
 });
 
@@ -1317,11 +1362,16 @@ GET('/api/rundowns/:id/export', needRd('viewer'), (req) => rundownExport(getRund
 // ---------- Backups (nur Admin – Backups enthalten Benutzer, Passwort-Hashes und Tokens)
 GET('/api/backups', need('admin'), () => ({ status: backup.status(), backups: backup.list() }));
 
-PATCH('/api/backups/settings', need('admin'), (req) => ({ settings: backup.saveSettings(req.body), status: backup.status() }));
+PATCH('/api/backups/settings', need('admin'), (req) => {
+  const settings = backup.saveSettings(req.body);
+  audit.log('backup_settings', { actor: req.user, ip: clientIp(req), detail: req.body });
+  return { settings, status: backup.status() };
+});
 
 POST('/api/backups', need('admin'), (req) => {
   const b = backup.create('manuell', req.body.label);
   console.log(`[Backup] Manuelles Backup von ${req.user.email}: ${b.name}`);
+  audit.log('backup_manual', { actor: req.user, target: b.name, ip: clientIp(req), detail: req.body.label ? { label: String(req.body.label).slice(0, 100) } : null });
   return { backup: b, status: backup.status() };
 });
 
@@ -1338,13 +1388,18 @@ GET('/api/backups/:name/download', need('admin'), (req, res) => {
   return undefined;
 });
 
-DELETE('/api/backups/:name', need('admin'), (req) => { backup.remove(req.params.name); return { ok: true, status: backup.status() }; });
+DELETE('/api/backups/:name', need('admin'), (req) => {
+  backup.remove(req.params.name);
+  audit.log('backup_delete', { actor: req.user, target: req.params.name, ip: clientIp(req) });
+  return { ok: true, status: backup.status() };
+});
 
 rawRoute('POST', '/api/backups/upload', need('admin'), async (req) => {
   const buf = await readRaw(req, 500 * 1024 * 1024);
   if (!buf.length) fail(400, 'Leere Datei');
   const b = backup.importUpload(buf, String(req.query.name || ''));
   console.log(`[Backup] Hochgeladen von ${req.user.email}: ${b.name}`);
+  audit.log('backup_upload', { actor: req.user, target: b.name, ip: clientIp(req) });
   return { backup: b };
 });
 
@@ -1352,6 +1407,7 @@ POST('/api/backups/:name/restore', need('admin'), (req, res) => {
   if (req.body.confirm !== true) fail(400, 'Bestätigung fehlt');
   const { summary, safety } = backup.prepareRestore(req.params.name);
   console.log(`[Backup] Wiederherstellung von ${req.params.name} durch ${req.user.email} – aktueller Stand gesichert als ${safety.name}. Server startet neu …`);
+  audit.noteRestore({ actor: { id: req.user.id, name: req.user.name, email: req.user.email }, name: req.params.name, safety: safety.name, ip: clientIp(req) });
   res.on('finish', () => setTimeout(() => shutdown(backup.RESTART_EXIT_CODE), 300));
   return { ok: true, summary, safety: safety.name, restarting: true };
 });
@@ -1495,8 +1551,10 @@ server.listen(PORT, HOST, () => {
   console.log(`  Daten:     ${DATA_DIR}`);
   console.log(`  Backups:   ${backup.BACKUP_DIR} (${backup.getSettings().enabled ? `alle ${backup.getSettings().interval_hours} Std., ${backup.getSettings().keep} behalten` : 'automatisch aus'})`);
   backup.startScheduler(console.log, (err) => {
-    // Alle Admins informieren – höchstens einmal pro Fehlerserie bzw. alle 24 Stunden
-    for (const a of db.prepare("SELECT email FROM users WHERE role='admin'").all()) mail.notify(mail.backupFailedMail(a.email, err.at, err.message), 'Backup-Warnung');
+    // Admins bzw. nur den Super-Admin informieren – höchstens einmal pro Fehlerserie bzw. alle 24 Stunden
+    audit.log('backup_failed', { detail: { error: err.message }, ok: false });
+    const sql = mail.getNotify().backup_to === 'owner' ? 'SELECT email FROM users WHERE is_owner=1' : "SELECT email FROM users WHERE role='admin'";
+    for (const a of db.prepare(sql).all()) mail.notify(mail.backupFailedMail(a.email, err.at, err.message), 'Backup-Warnung', 'backup');
   });
   if (Q.userCount.get().n === 0) console.log('\n  → Erster Start: Im Browser öffnen und Admin-Konto anlegen.');
   console.log('');

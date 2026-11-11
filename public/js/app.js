@@ -993,10 +993,55 @@ function relFuture(ms) {
 }
 const KIND_ICON = { auto: 'history', manuell: 'user', 'vor-wiederherstellung': 'shield', 'vor-loeschen': 'trash', upload: 'upload' };
 
+const AUDIT_ICON = { auth: 'key', konto: 'user', mail: 'send', system: 'database' };
+/** Protokoll-Eintrag → lesbarer Satz ({ text: [Knoten…], note }) */
+function auditText(e) {
+  const d = e.detail || {}, B = (x) => h('b', null, x ?? '–');
+  const who = B(e.actor || 'System');
+  const tgt = B(d.tn || e.target);
+  const role = (r) => ROLE_LABEL[r] || r;
+  const dur = (hrs) => (hrs >= 48 ? `${Math.round(hrs / 24)} Tage` : hrs === 1 ? '1 Stunde' : `${hrs} Stunden`);
+  const T = {
+    setup: () => [who, ' hat die App eingerichtet (erstes Admin-Konto)'],
+    login: () => [who, ' hat sich angemeldet'],
+    login_fail: () => ['Fehlgeschlagene Anmeldung für ', B(e.target), d.known ? '' : ' (kein Konto mit dieser Adresse)'],
+    forgot: () => ['„Passwort vergessen?“ angefordert für ', B(e.target), d.known ? '' : ' (kein Konto – keine Mail verschickt)'],
+    reset_used: () => [who, ' hat über einen Reset-Link ein neues Passwort gesetzt'],
+    invite_accepted: () => [who, ' hat die Einladung angenommen'],
+    user_created: () => [who, ' hat ', tgt, ` angelegt (${d.restricted ? 'Extern' : role(d.role)})`],
+    user_invited: () => [who, ' hat ', tgt, ` eingeladen (${d.restricted ? 'Extern' : role(d.role)})`, d.mail ? ' – per Mail' : ''],
+    user_deleted: () => [who, ' hat ', tgt, ' gelöscht'],
+    role_changed: () => [who, ': ', tgt, ` ist jetzt ${role(d.to)} (vorher ${role(d.from)})`],
+    restricted_changed: () => [who, ' hat ', tgt, d.restricted ? ' auf Extern gestellt' : ' auf Intern gestellt'],
+    email_changed: () => [who, ' hat die E-Mail von ', tgt, ` geändert (vorher ${d.from})`],
+    password_self: () => [who, ' hat das eigene Passwort geändert'],
+    password_admin: () => [who, ' hat ein ', d.temp ? 'temporäres ' : 'neues ', 'Passwort für ', tgt, ' gesetzt'],
+    reset_link: () => [who, ` hat einen ${d.purpose === 'invite' ? 'Einladungslink' : 'Reset-Link'} für `, tgt, ` erstellt (${dur(d.hours)} gültig)`, d.mail ? ' – per Mail' : ''],
+    reset_revoked: () => [who, ' hat die offenen Links für ', tgt, ' widerrufen'],
+    owner: () => [who, ' hat die Rolle Super-Admin an ', tgt, ' übertragen'],
+    mail_sent: () => ['Mail ', B(`„${d.subject || ''}“`), ' an ', B(e.target)],
+    mail_failed: () => ['Mail ', B(`„${d.subject || ''}“`), ' an ', B(e.target), ' fehlgeschlagen'],
+    backup_manual: () => [who, ' hat ein Backup erstellt', d.label ? ` („${d.label}“)` : ''],
+    backup_upload: () => [who, ' hat ein Backup hochgeladen'],
+    backup_delete: () => [who, ' hat ein Backup gelöscht'],
+    backup_restore: () => [who, ' hat ein Backup wiederhergestellt'],
+    backup_failed: () => ['Automatisches Backup fehlgeschlagen'],
+    backup_settings: () => [who, ' hat die Backup-Einstellungen geändert'],
+    mail_settings: () => [who, ' hat den E-Mail-Versand geändert', d.pass_changed ? ' (inkl. Passwort)' : ''],
+    notify_settings: () => [who, ' hat die Benachrichtigungen geändert'],
+    history_settings: () => [who, ` hat die Aufbewahrung des Änderungsverlaufs auf ${d.retention_days ? d.retention_days + ' Tage' : 'unbegrenzt'} gesetzt`],
+    token_new: () => [who, ' hat das Companion-/API-Token für ', B(e.target), ' neu erzeugt'],
+  };
+  const note = d.error || (['backup_manual', 'backup_upload', 'backup_delete', 'backup_restore'].includes(e.kind) ? e.target : null);
+  return { text: (T[e.kind] || (() => [e.kind]))(), note };
+}
+
 const SYS_SECTIONS = [
   { id: 'backups', label: 'Backups', icon: 'database', intro: 'Sicherungen der kompletten Datenbank: Rundowns, Benutzer, Links und Tokens.' },
   { id: 'mail', label: 'E-Mail-Versand', icon: 'send', intro: 'Einladungen, Passwort-Links und Benachrichtigungen per E-Mail.' },
+  { id: 'notify', label: 'Benachrichtigungen', icon: 'bell', intro: 'Welche automatischen E-Mails verschickt werden.' },
   { id: 'verlauf', label: 'Änderungsverlauf', icon: 'history', intro: 'Wer hat wann was geändert – und wie lange das aufbewahrt wird.' },
+  { id: 'protokoll', label: 'Protokoll', icon: 'shield', intro: 'Anmeldungen, Konten, E-Mails und System-Ereignisse – nur für Admins sichtbar.' },
 ];
 const sysPhone = () => matchMedia('(max-width: 760px)').matches;
 
@@ -1006,7 +1051,7 @@ async function viewSystem(section = '') {
   if (section && !SYS_SECTIONS.some((x) => x.id === section)) { history.replaceState(null, '', '#/system'); section = ''; }
   const listOnly = !section && sysPhone();
   const sec = SYS_SECTIONS.find((x) => x.id === section) || SYS_SECTIONS[0];
-  const nav = { backups: { dot: '', sub: '…' }, mail: { dot: '', sub: '…' }, verlauf: { dot: '', sub: '…' } };
+  const nav = Object.fromEntries(SYS_SECTIONS.map((x) => [x.id, { dot: '', sub: '…' }]));
   const navBox = h('nav', { class: 'sys-nav' + (listOnly ? ' sys-nav-list' : '') });
   const drawNav = () => fill(navBox, SYS_SECTIONS.map((x) => h('a', {
     class: 'sys-nav-item' + (!listOnly && x.id === sec.id ? ' active' : ''), href: '#/system/' + x.id,
@@ -1106,12 +1151,102 @@ async function viewSystem(section = '') {
           } }, icon('send'), 'Speichern & Testmail senden'))));
   };
   api('GET', '/api/system/mail').then(drawMail).catch(() => {});
+  // Benachrichtigungen (an/aus je Mail-Art)
+  const notifyBox = h('div');
+  const NOTIFY_ROWS = [
+    ['share', 'Freigabe', 'Wenn jemandem ein Rundown freigegeben wird, den er vorher nicht sehen konnte.'],
+    ['password', 'Passwort geändert', 'Sicherheitshinweis an die Person, deren Passwort geändert wurde.'],
+    ['backup', 'Backup fehlgeschlagen', 'Warnung, wenn die automatische Sicherung nicht klappt (höchstens alle 24 Std.).'],
+    ['owner', 'Super-Admin übertragen', 'Info an die Person, die neu Super-Admin wird.'],
+  ];
+  const drawNotify = (n) => {
+    const on = NOTIFY_ROWS.filter(([k]) => n[k]).length;
+    setNav('notify', n.mail_enabled && on ? 'ok' : '', n.mail_enabled ? `${on} von ${NOTIFY_ROWS.length} aktiv` : 'Mailversand nicht eingerichtet');
+    const put = async (patch) => {
+      try { drawNotify(await api('PUT', '/api/system/notify', patch)); toast('Gespeichert', 'ok'); } catch (e) { toast(e.message, 'err'); }
+    };
+    fill(notifyBox,
+      n.mail_enabled ? null : h('div', { class: 'danger-box nt-warn' }, icon('alert'),
+        h('div', null, h('b', null, 'Mailversand ist nicht eingerichtet'), 'Die Einstellungen werden gespeichert, aber erst verschickt, wenn der ',
+          h('a', { href: '#/system/mail' }, 'E-Mail-Versand'), ' eingerichtet ist.')),
+      h('div', { class: 'card nt-list' }, NOTIFY_ROWS.map(([k, title, desc]) => h('div', { class: 'nt-row' + (n[k] ? '' : ' off') },
+        h('div', { class: 'nt-txt' }, h('b', null, title), h('span', null, desc),
+          k === 'backup' && n.backup ? h('div', { class: 'nt-sub' }, h('span', null, 'Empfänger'),
+            h('select', { class: 'input sort-sel', onchange: (e) => put({ backup_to: e.target.value }) },
+              h('option', { value: 'admins', selected: n.backup_to === 'admins' }, 'Alle Admins'),
+              h('option', { value: 'owner', selected: n.backup_to === 'owner' }, 'Nur Super-Admin'))) : null),
+        h('label', { class: 'switch', title: title + (n[k] ? ' ausschalten' : ' einschalten') }, h('input', { type: 'checkbox', checked: !!n[k], 'aria-label': title, onchange: (e) => put({ [k]: e.target.checked }) }))))),
+      h('div', { class: 'sec-info', style: { marginTop: '18px' } },
+        h('div', null, icon('send'), h('span', null, h('b', null, 'Immer verschickt: '), 'Einladungen, Reset-Links und Testmails – die löst ein Admin bzw. „Passwort vergessen?“ bewusst aus.'))));
+  };
+  api('GET', '/api/system/notify').then(drawNotify).catch(() => {});
+
+  // Protokoll
+  api('GET', '/api/system/audit/summary').then((a) => {
+    // Warnpunkt bei Fehlversuchen bzw. Mail-Fehlern der letzten 24 Stunden
+    const warn = [a.login_fails_24h ? `${a.login_fails_24h} Anmeldefehler` : '', a.mail_fails_24h ? `${a.mail_fails_24h} Mailfehler` : ''].filter(Boolean);
+    setNav('protokoll', warn.length ? 'warn' : '', warn.length ? warn.join(' · ') + ' (24 h)' : `${a.total} Einträge · ${a.retention_days} Tage`);
+  }).catch(() => {});
+  const auditView = () => {
+    const A = { cat: '', q: '', entries: [], more: false };
+    const listEl = h('div', { class: 'au-list' });
+    const moreBtn = h('button', { class: 'btn au-more', onclick: () => load(true) }, 'Ältere laden');
+    const search = h('input', { class: 'input', type: 'search', placeholder: 'Name, E-Mail oder IP suchen', oninput: debounce(() => { A.q = search.value.trim(); load(); }, 250) });
+    const chips = h('div', { class: 'chips' });
+    const drawChips = () => fill(chips, [['', 'Alle'], ['auth', 'Anmeldungen'], ['konto', 'Konten & Rechte'], ['mail', 'E-Mails'], ['system', 'System']].map(([k, l]) =>
+      h('button', { class: 'chip' + (A.cat === k ? ' sel' : ''), onclick: () => { A.cat = k; drawChips(); load(); } }, l)));
+    drawChips();
+    let seq = 0;
+    const load = async (more = false) => {
+      const my = ++seq;
+      const qs = new URLSearchParams({ cat: A.cat, q: A.q, limit: 100 });
+      if (more && A.entries.length) qs.set('before', A.entries[A.entries.length - 1].id);
+      try {
+        const r = await api('GET', '/api/system/audit?' + qs);
+        if (my !== seq) return;
+        A.entries = more ? A.entries.concat(r.entries) : r.entries; A.more = r.more;
+        draw();
+      } catch (e) { toast(e.message, 'err'); }
+    };
+    const dayOf = (ms) => {
+      const d = new Date(ms), t = new Date(); t.setHours(0, 0, 0, 0);
+      const diff = Math.round((t - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+      return diff === 0 ? 'Heute' : diff === 1 ? 'Gestern' : d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+    };
+    const draw = () => {
+      if (!A.entries.length) { fill(listEl, h('div', { class: 'ov-empty' }, icon('shield'), h('b', null, A.q || A.cat ? 'Keine passenden Einträge' : 'Noch keine Einträge'), h('span', null, 'Hier erscheinen Anmeldungen, Änderungen an Konten, verschickte Mails und System-Ereignisse.'))); moreBtn.hidden = true; return; }
+      const out = []; let last = '';
+      for (const e of A.entries) {
+        const day = dayOf(e.at);
+        if (day !== last) { out.push(h('div', { class: 'au-day' }, day)); last = day; }
+        const t = auditText(e);
+        out.push(h('div', { class: 'au-row' + (e.ok ? '' : ' fail') },
+          h('div', { class: `au-ico c-${e.cat}` }, icon(e.ok ? AUDIT_ICON[e.cat] : 'alert')),
+          h('div', { class: 'au-main' },
+            h('div', { class: 'au-text' }, ...t.text),
+            t.note ? h('div', { class: 'au-note' }, t.note) : null,
+            h('div', { class: 'au-meta' },
+              h('span', null, new Date(e.at).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr'),
+              e.ip ? h('span', { title: 'IP-Adresse' }, e.ip.replace(/^::ffff:/, '')) : null,
+              e.detail?.ua ? h('span', null, e.detail.ua) : null))));
+      }
+      fill(listEl, out);
+      moreBtn.hidden = !A.more;
+    };
+    load();
+    return h('div', null,
+      h('div', { class: 'user-tools' }, h('div', { class: 'search' }, icon('search'), search), chips),
+      listEl, moreBtn);
+  };
+
   const content = {
     backups: () => [statusBox,
       h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), bkSum), listBox,
       backupInfo],
     mail: () => [mailBox],
+    notify: () => [notifyBox],
     verlauf: () => [histBox],
+    protokoll: () => [auditView()],
   };
   const backupInfo = h('div', { class: 'sec-info', style: { marginTop: '22px' } },
       h('div', null, icon('shield'), h('span', null, h('b', null, 'Backups enthalten alle Daten'), ' inkl. E-Mail-Adressen, Passwort-Hashes, API-Tokens und öffentlicher Links. Heruntergeladene Dateien bitte sicher aufbewahren.')),

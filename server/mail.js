@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, getSecret } from './db.js';
+import * as audit from './audit.js';
 
 db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 const getS = db.prepare('SELECT value FROM settings WHERE key=?');
@@ -188,7 +189,14 @@ export async function send(msg) {
   const c = config();
   if (!c.host || !c.from_email) throw new Error('Mailversand ist nicht eingerichtet (System → E-Mail-Versand)');
   if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(msg.to || '')) throw new Error('Ungültige Empfänger-Adresse');
-  return smtpSend(c, msg.to, buildMessage(c, msg));
+  try {
+    const r = await smtpSend(c, msg.to, buildMessage(c, msg));
+    audit.log('mail_sent', { target: msg.to, detail: { subject: msg.subject, tpl: msg.tpl } });
+    return r;
+  } catch (e) {
+    audit.log('mail_failed', { target: msg.to, detail: { subject: msg.subject, tpl: msg.tpl, error: e.message }, ok: false });
+    throw e;
+  }
 }
 
 /* ------------------------------------------------------------------ Vorlagen */
@@ -216,7 +224,7 @@ function fill(tpl, vars, escape) {
 export function render(name, to, vars = {}) {
   const t = load(name);
   const v = { app_url: appUrl(), ...vars };
-  return { to, subject: fill(t.subject, v, false), html: fill(t.html, v, true), text: fill(t.text, v, false) };
+  return { to, tpl: name, subject: fill(t.subject, v, false), html: fill(t.html, v, true), text: fill(t.text, v, false) };
 }
 
 const validity = (h) => (h >= 48 ? `${Math.round(h / 24)} Tage` : h === 1 ? '1 Stunde' : `${h} Stunden`);
@@ -272,9 +280,26 @@ export function ownerMail(u, by) {
   return render('super-admin', u.email, { name: hello(u), uebertragen_von: by || 'Der bisherige Super-Admin', zeitpunkt: when(), link: appUrl() || '' });
 }
 
-/** Benachrichtigung im Hintergrund senden – blockiert nie, wirft nie */
-export function notify(msg, label = 'Mail') {
+/* ------------------------------------------------------------------ Benachrichtigungen (an/aus) */
+export const NOTIFY_TYPES = ['share', 'password', 'backup', 'owner'];
+const NOTIFY_DEFAULT = { share: true, password: true, backup: true, owner: true, backup_to: 'admins' };
+export function getNotify() {
+  let v = {};
+  try { v = JSON.parse(getS.get('notify')?.value || '{}'); } catch { /* */ }
+  return { ...NOTIFY_DEFAULT, ...v };
+}
+export function saveNotify(b) {
+  const cur = getNotify();
+  for (const k of NOTIFY_TYPES) if (b[k] !== undefined) cur[k] = !!b[k];
+  if (['admins', 'owner'].includes(b.backup_to)) cur.backup_to = b.backup_to;
+  setS.run('notify', JSON.stringify(cur));
+  return cur;
+}
+
+/** Benachrichtigung im Hintergrund senden – blockiert nie, wirft nie. type = Schalter aus NOTIFY_TYPES */
+export function notify(msg, label = 'Mail', type = null) {
   if (!enabled()) return;
+  if (type && !getNotify()[type]) return;
   Promise.resolve().then(() => send(msg))
     .then(() => console.log(`  ${label} an ${msg.to} gesendet`))
     .catch((e) => console.error(`  ${label} an ${msg.to} fehlgeschlagen:`, e.message));

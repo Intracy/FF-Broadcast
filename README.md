@@ -241,6 +241,7 @@ Dieselben Daten gibt es für angemeldete Benutzer (Cookie oder `Authorization: B
 | `SMTP_USER` · `SMTP_PASS` | – | Anmeldung am Mailserver (meist die komplette Adresse) |
 | `SMTP_FROM` · `SMTP_FROM_NAME` | `SMTP_USER` · `FF Rundown` | Absender |
 | `APP_URL` | – | Adresse der App für Links in Mails, z. B. `https://rundown.example.de` |
+| `AUDIT_DAYS` | `90` | Wie viele Tage das Protokoll (System → Protokoll) aufbewahrt wird, mindestens 7 |
 
 ## Update auf eine neue Version
 
@@ -292,6 +293,17 @@ Per Variable gesetzte Werte sind in der Oberfläche gesperrt. Backups enthalten 
 
 Manuell geht es weiterhin: Server stoppen und den Ordner `data` kopieren.
 
+## Protokoll
+
+Unter **System → Protokoll** sehen Admins, was sicherheitsrelevant passiert ist – mit Zeit, IP-Adresse und Gerät:
+
+- **Anmeldungen:** erfolgreiche und fehlgeschlagene Logins, „Passwort vergessen?“, eingelöste Reset- und Einladungslinks
+- **Konten & Rechte:** Benutzer angelegt/eingeladen/gelöscht, Rolle, Intern/Extern, E-Mail und Passwort geändert, Links erstellt/widerrufen, Super-Admin übertragen
+- **E-Mails:** jede verschickte Mail mit Betreff, Empfänger und – falls fehlgeschlagen – der Fehlermeldung
+- **System:** Backups erstellt/hochgeladen/gelöscht/wiederhergestellt, fehlgeschlagene automatische Backups, geänderte Einstellungen, neu erzeugte API-Tokens
+
+Mit Filter und Suche (Name, E-Mail, IP). Gibt es in den letzten 24 Stunden fehlgeschlagene Anmeldungen oder Mails, zeigt das Menü einen gelben Punkt. Einträge werden nach 90 Tagen gelöscht (`AUDIT_DAYS` ändert das) und sind Teil der Backups.
+
 ## E-Mail-Versand (Einladungen, „Passwort vergessen“)
 
 Optional. Unter **System → E-Mail-Versand** trägst du ein Postfach ein (SMTP-Server, Port, Benutzer, Passwort, Absender und die **Adresse der App**, auf die die Links in den Mails zeigen) und prüfst es mit **„Speichern & Testmail senden“**. Das Passwort wird verschlüsselt gespeichert. Alternativ per Umgebungsvariablen (`SMTP_*`, `APP_URL`, siehe „Konfiguration“).
@@ -306,6 +318,8 @@ Danach:
 - **Passwort geändert:** Sicherheitshinweis nach jeder Passwortänderung (selbst, per Reset-Link oder durch einen Admin) – mit dem Super-Admin als Ansprechpartner.
 - **Backup fehlgeschlagen:** schlägt die automatische Sicherung fehl, bekommen alle Admins eine Warnung (einmal pro Fehlerserie, höchstens alle 24 Stunden).
 - **Super-Admin:** wer die Rolle übertragen bekommt, wird per Mail informiert.
+
+Unter **System → Benachrichtigungen** lässt sich jede dieser vier Mails einzeln abschalten; für die Backup-Warnung kann man wählen, ob alle Admins oder nur der Super-Admin sie bekommen. Einladungen, Reset-Links und Testmails werden immer verschickt.
 
 Die Benachrichtigungen laufen im Hintergrund; schlägt der Versand fehl, steht das nur im Server-Log – die eigentliche Aktion klappt trotzdem.
 
