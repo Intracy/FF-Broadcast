@@ -265,7 +265,7 @@ export function passwordChangedMail(u, contact) {
 }
 
 export function backupFailedMail(to, at, error) {
-  return render('backup-fehler', to, { zeitpunkt: when(at), fehler: error, link: `${appUrl()}/#/system` });
+  return render('backup-fehler', to, { zeitpunkt: when(at), fehler: error, link: `${appUrl()}/#/system/backups` });
 }
 
 export function ownerMail(u, by) {
