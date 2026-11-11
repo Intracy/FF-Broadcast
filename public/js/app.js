@@ -242,7 +242,25 @@ function viewLogin() {
     const r = await api('POST', '/api/auth/login', v);
     S.user = r.user;
     router();
-  }, { extra: h('p', { class: 'auth-forgot' }, icon('info'), h('span', null, h('b', null, 'Passwort vergessen?'), ' Ein Admin kann dir unter „Benutzer“ einen Link zum Zurücksetzen erzeugen.')) });
+  }, { extra: S.mail
+    ? h('p', { class: 'auth-forgot' }, icon('key'), h('span', null, h('button', { class: 'link-btn', type: 'button', onclick: () => viewForgot(document.querySelector('input[name=email]')?.value || '') }, 'Passwort vergessen?'), ' Wir schicken dir einen Link per E-Mail.'))
+    : h('p', { class: 'auth-forgot' }, icon('info'), h('span', null, h('b', null, 'Passwort vergessen?'), ' Ein Admin kann dir unter „Benutzer“ einen Link zum Zurücksetzen erzeugen.')) });
+}
+
+/** „Passwort vergessen?“ – Link per E-Mail anfordern */
+function viewForgot(email = '') {
+  authPage('Gib die E-Mail-Adresse deines Kontos ein. Du bekommst einen Link, über den du ein neues Passwort festlegst.', [
+    { name: 'email', type: 'email', 'aria-label': 'E-Mail', autocomplete: 'username', required: true, value: email },
+  ], 'Link anfordern', async (v) => {
+    const r = await api('POST', '/api/auth/forgot', v);
+    const card = document.querySelector('.auth-card');
+    card.replaceChildren(
+      h('div', { class: 'brand auth-brand-m' }, h('span', { class: 'brand-mark' }, icon('logo')), h('span', { class: 'brand-name' }, h('b', null, 'Frankenfinals'), h('span', null, 'Rundown'))),
+      h('h1', { class: 'auth-title' }, 'E-Mail ist unterwegs'),
+      h('p', null, r.message),
+      h('p', { class: 'hint' }, 'Der Link ist 1 Stunde gültig. Keine Mail bekommen? Bitte einen Admin um einen Reset-Link.'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => viewLogin() }, 'Zurück zur Anmeldung'));
+  }, { title: 'Passwort vergessen', extra: h('p', { class: 'auth-forgot' }, h('button', { class: 'link-btn', type: 'button', onclick: () => viewLogin() }, '← Zurück zur Anmeldung')) });
 }
 
 /** Seite für Reset- und Einladungslinks */
@@ -688,6 +706,11 @@ async function viewUsers() {
   const fmtUntil = (ms) => new Date(ms).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
   /** Zeigt einen frisch erzeugten Link mit Kopieren / Teilen / QR */
+  /** Rückmeldung zum Mailversand (nur wenn versucht) */
+  const mailStatus = (r, u) => r.mail_sent === undefined ? null
+    : r.mail_sent ? h('div', { class: 'mail-status ok' }, icon('checkCircle'), h('span', null, 'E-Mail an ', h('b', null, (u || r).email), ' gesendet.'))
+    : h('div', { class: 'mail-status err' }, icon('alert'), h('span', null, 'E-Mail konnte nicht gesendet werden: ', r.mail_error, ' – den Link unten kannst du trotzdem weitergeben.'));
+
   const linkResult = (link, u) => {
     const url = linkUrl(link.token);
     let qr = false;
@@ -766,14 +789,17 @@ async function viewUsers() {
     const pw = passwordField('Start-Passwort', 'Mindestens 8 Zeichen. „Generieren“ erstellt ein sicheres Passwort und kopiert es.');
     const must = h('input', { type: 'checkbox', checked: true });
     const hours = h('select', { class: 'input sort-sel' }, HOURS.map(([v, l]) => h('option', { value: v, selected: v === 168 }, l)));
+    const sendMail = h('input', { type: 'checkbox', checked: !!S.mail, disabled: !S.mail });
     const accessBox = h('div');
     const drawAccess = () => {
       pw.input.required = mode === 'password';
       fill(accessBox, mode === 'invite'
         ? h('div', { class: 'access-info' }, icon('send'), h('div', null,
             h('b', null, 'Der Benutzer legt sein Passwort selbst fest.'),
-            h('span', null, 'Nach dem Anlegen bekommst du einen Einladungslink zum Weiterschicken.'),
-            h('label', { class: 'inline-field' }, 'Link gültig für', hours)))
+            h('span', null, S.mail ? 'Die Einladung geht per E-Mail raus; den Link bekommst du zusätzlich zum Weiterschicken.' : 'Nach dem Anlegen bekommst du einen Einladungslink zum Weiterschicken.'),
+            h('label', { class: 'inline-field' }, 'Link gültig für', hours),
+            h('label', { class: 'switch', style: { marginTop: '8px' }, title: S.mail ? '' : 'Mailversand unter System → E-Mail-Versand einrichten' }, sendMail,
+              h('span', null, S.mail ? 'Einladung per E-Mail senden' : 'Einladung per E-Mail senden (Mailversand nicht eingerichtet)'))))
         : h('div', null, pw.el, h('label', { class: 'switch' }, must, h('span', null, 'Muss beim ersten Login geändert werden (empfohlen)'))));
     };
     drawAccess();
@@ -802,7 +828,7 @@ async function viewUsers() {
       if (body.restricted && role.get() === 'admin' && scope !== 'restricted') body.restricted = false;
       if (selfLocked) { delete body.role; delete body.restricted; }
       if (!u) {
-        if (mode === 'invite') Object.assign(body, { invite: true, hours: Number(hours.value) });
+        if (mode === 'invite') Object.assign(body, { invite: true, hours: Number(hours.value), send_mail: sendMail.checked });
         else Object.assign(body, { password: pw.input.value, must_change: must.checked });
       }
       try {
@@ -811,7 +837,7 @@ async function viewUsers() {
         if (u && u.id === S.user.id) { const st = await api('GET', '/api/auth/status'); S.user = st.user; return router(); }
         load();
         const afterCreate = () => { if (!u && res.restricted) userAccessModal(res, load); };
-        if (res.link) modal({ title: 'Benutzer angelegt', body: h('div', null, h('p', null, `${res.name || res.email} wurde ${res.restricted ? 'als externer Zugang' : 'als ' + ROLE_LABEL[res.role]} angelegt.`), linkResult(res.link, res)), onClose: afterCreate });
+        if (res.link) modal({ title: 'Benutzer angelegt', body: h('div', null, h('p', null, `${res.name || res.email} wurde ${res.restricted ? 'als externer Zugang' : 'als ' + ROLE_LABEL[res.role]} angelegt.`), mailStatus(res), linkResult(res.link, res)), onClose: afterCreate });
         else { toast(u ? 'Gespeichert' : 'Benutzer angelegt', 'ok'); afterCreate(); }
       } catch (ex) { err.textContent = ex.message; }
     });
@@ -843,7 +869,17 @@ async function viewUsers() {
                 fill(out, linkResult(r, u));
                 load();
               } catch (ex) { toast(ex.message, 'err'); }
-            } }, icon('link'), 'Link erzeugen')),
+            } }, icon('link'), 'Link erzeugen'),
+            S.mail ? h('button', { class: 'btn', type: 'button', title: `Link direkt an ${u.email} schicken`, onclick: async (ev) => {
+              ev.currentTarget.disabled = true;
+              try {
+                const r = await api('POST', `/api/users/${u.id}/reset-link`, { hours: Number(hours.value), send_mail: true });
+                u.open_link = { purpose: r.purpose, expires_at: r.expires_at };
+                fill(out, mailStatus(r, u), linkResult(r, u));
+                load();
+              } catch (ex) { toast(ex.message, 'err'); }
+              finally { ev.currentTarget && (ev.currentTarget.disabled = false); }
+            } }, icon('send'), 'Per E-Mail senden') : null),
           out);
       } else {
         const err = h('div', { class: 'form-error' });
@@ -985,8 +1021,66 @@ async function viewSystem() {
           } }, hs.retentions.map((v) => h('option', { value: v, selected: v === hs.retention_days }, v === 0 ? 'unbegrenzt' : v === 365 ? '1 Jahr' : `${v} Tage`)))),
         h('div', { class: 'bk-wide' }, h('span', null, 'Hinweis'), h('small', null, 'Ältere Einträge werden automatisch gelöscht. Live-Aktionen (Start, Weiter, ±Zeit) werden nicht aufgezeichnet. Der Verlauf ist Teil der Backups.')))));
   api('GET', '/api/history/settings').then(drawHist).catch(() => {});
+
+  // E-Mail-Versand (SMTP) für Einladungen und „Passwort vergessen“
+  const mailBox = h('div', { style: { marginTop: '26px' } });
+  const drawMail = (ms) => {
+    const f = (name, label, attrs = {}, hint = '') => {
+      const el = h('input', { class: 'input', name, value: ms[name] ?? '', disabled: ms.env, ...attrs });
+      return [el, h('label', { class: 'field' }, h('span', null, label), el, hint ? h('small', { class: 'hint' }, hint) : null)];
+    };
+    const [host, hostF] = f('host', 'SMTP-Server', { placeholder: 'z. B. mail.your-server.de' });
+    const [port, portF] = f('port', 'Port', { type: 'number', min: 1, max: 65535 });
+    const secure = h('select', { class: 'input', name: 'secure', disabled: ms.env },
+      [['starttls', 'STARTTLS (Port 587, empfohlen)'], ['ssl', 'SSL/TLS (Port 465)'], ['none', 'Keine (nur lokales Netz)']].map(([v, l]) => h('option', { value: v, selected: ms.secure === v }, l)));
+    secure.addEventListener('change', () => { if (secure.value === 'ssl' && port.value === '587') port.value = 465; if (secure.value === 'starttls' && port.value === '465') port.value = 587; });
+    const [user, userF] = f('user', 'Benutzername', { placeholder: 'meist die komplette E-Mail-Adresse', autocomplete: 'off' });
+    const [pass, passF] = f('pass', 'Passwort', { type: 'password', value: '', autocomplete: 'new-password', placeholder: ms.has_pass ? '•••••••• (gespeichert – leer lassen = unverändert)' : '' });
+    const [fromEmail, fromEmailF] = f('from_email', 'Absender-Adresse', { type: 'email', placeholder: 'z. B. rundown@fl-tecmedia.de' });
+    const [fromName, fromNameF] = f('from_name', 'Absender-Name', { placeholder: 'FF Rundown' });
+    const [appUrl, appUrlF] = f('app_url', 'Adresse der App (für Links in Mails)', { type: 'url', value: ms.app_url || location.origin }, 'So, wie Externe die App im Browser öffnen, z. B. https://rundown.fl-tecmedia.de');
+    const testTo = h('input', { class: 'input', type: 'email', value: S.user.email, placeholder: 'Empfänger der Testmail' });
+    const status = ms.enabled
+      ? h('span', { class: 'st-badge mail-on' }, icon('checkCircle'), 'Aktiv')
+      : h('span', { class: 'st-badge' }, 'Nicht eingerichtet');
+    const save = async () => {
+      const body = { host: host.value, port: port.value, secure: secure.value, user: user.value, from_email: fromEmail.value, from_name: fromName.value, app_url: appUrl.value };
+      if (pass.value) body.pass = pass.value;
+      const r = await api('PUT', '/api/system/mail', body);
+      S.mail = r.enabled;
+      return r;
+    };
+    fill(mailBox,
+      h('div', { class: 'bk-list-head' }, h('h2', null, 'E-Mail-Versand'), status),
+      h('div', { class: 'card bk-card' },
+        h('div', { class: 'bk-card-top' },
+          h('div', { class: 'bk-ico' + (ms.enabled ? ' on' : '') }, icon('send')),
+          h('div', { class: 'bk-title' },
+            h('b', null, 'Einladungen und „Passwort vergessen“ per E-Mail'),
+            h('span', null, ms.env ? 'Festgelegt über Umgebungsvariablen (SMTP_HOST …) – hier nur Anzeige.' : 'Über ein normales Postfach (z. B. bei Hetzner, IONOS, Strato) oder einen Versanddienst. Ohne Einrichtung funktionieren Links wie bisher zum Weiterschicken.')),
+          ms.env ? null : h('button', { class: 'btn sm', type: 'button', title: 'Werte für ein Postfach bei Hetzner-Webhosting eintragen', onclick: () => { host.value = 'mail.your-server.de'; port.value = 587; secure.value = 'starttls'; if (!user.value && fromEmail.value) user.value = fromEmail.value; host.focus(); } }, 'Hetzner-Werte')),
+        h('div', { class: 'form-grid mail-grid' }, hostF, h('div', { class: 'mail-port' }, portF, h('label', { class: 'field' }, h('span', null, 'Verschlüsselung'), secure)), userF, passF, fromEmailF, fromNameF),
+        appUrlF,
+        ms.env ? null : h('div', { class: 'mail-actions' },
+          h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+            try { const r = await save(); drawMail(r); toast(r.enabled ? 'Mailversand gespeichert – jetzt eine Testmail senden' : 'Gespeichert', 'ok'); } catch (e) { toast(e.message, 'err'); }
+          } }, 'Speichern')),
+        h('div', { class: 'mail-test' },
+          h('span', null, 'Testmail an'), testTo,
+          h('button', { class: 'btn', type: 'button', onclick: async (ev) => {
+            const b = ev.currentTarget; b.disabled = true; const old = b.textContent; b.textContent = 'Sende …';
+            try {
+              if (!ms.env) await save();
+              const r = await api('POST', '/api/system/mail/test', { to: testTo.value });
+              toast(`Testmail an ${r.to} gesendet`, 'ok');
+              drawMail(await api('GET', '/api/system/mail'));
+            } catch (e) { toast(e.message, 'err'); b.disabled = false; b.textContent = old; }
+          } }, icon('send'), 'Speichern & Testmail senden'))));
+  };
+  api('GET', '/api/system/mail').then(drawMail).catch(() => {});
   shell('system', h('div', { class: 'page page-narrow' }, head, fileIn, statusBox,
     h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), h('span', { class: 'muted bk-sum' })), listBox,
+    mailBox,
     histBox,
     h('div', { class: 'sec-info', style: { marginTop: '22px' } },
       h('div', null, icon('shield'), h('span', null, h('b', null, 'Backups enthalten alle Daten'), ' inkl. E-Mail-Adressen, Passwort-Hashes, API-Tokens und öffentlicher Links. Heruntergeladene Dateien bitte sicher aufbewahren.')),
@@ -2356,7 +2450,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
   if (location.pathname.startsWith('/p/')) return router();
   try {
     const st = await api('GET', '/api/auth/status');
-    S.user = st.user; S.needsSetup = st.needsSetup; S.version = st.version;
+    S.user = st.user; S.needsSetup = st.needsSetup; S.version = st.version; S.mail = !!st.mail;
   } catch { /* offline */ }
   router();
 })();

@@ -6,6 +6,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { db, Q, tx, updateRow, randomToken, getSecret, DATA_DIR, ensureOwner } from './db.js';
 import * as hist from './history.js';
+import * as mail from './mail.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, parseCookies, serializeCookie, ROLES, can, rank } from './auth.js';
 import { applyLiveAction, parseLive } from './live.js';
 import * as backup from './backup.js';
@@ -355,7 +356,30 @@ const BOOT_ID = randomToken(6);
 GET('/api/health', () => ({ ok: true, version: VERSION, boot: BOOT_ID }));
 
 // ---------- Auth
-GET('/api/auth/status', (req) => ({ needsSetup: Q.userCount.get().n === 0, user: req.user ? userOut(req.user) : null, version: VERSION }));
+GET('/api/auth/status', (req) => ({ needsSetup: Q.userCount.get().n === 0, user: req.user ? userOut(req.user) : null, version: VERSION, mail: mail.enabled() }));
+
+// „Passwort vergessen?“ – immer dieselbe Antwort (verrät nicht, ob es die Adresse gibt), begrenzt gegen Missbrauch
+const forgotIp = new Map(), forgotUser = new Map();
+POST('/api/auth/forgot', (req) => {
+  if (!mail.enabled()) fail(400, 'Der Mailversand ist nicht eingerichtet – bitte einen Admin um einen Reset-Link bitten');
+  const ip = clientIp(req), now = Date.now();
+  const hits = (forgotIp.get(ip) || []).filter((t) => now - t < 15 * 60000);
+  if (hits.length >= 5) fail(429, 'Zu viele Anfragen. Bitte in ein paar Minuten erneut versuchen.');
+  forgotIp.set(ip, [...hits, now]);
+  const email = String(req.body.email || '').trim();
+  if (!EMAIL_RE.test(email)) fail(400, 'Bitte gültige E-Mail-Adresse angeben');
+  const u = Q.userByEmail.get(email);
+  if (u && !(forgotUser.get(u.id) > now - 2 * 60000)) {
+    forgotUser.set(u.id, now);
+    const invite = String(u.password_hash).startsWith(NO_PASSWORD);
+    const link = createResetLink(u.id, invite ? 'invite' : 'reset', invite ? 168 : 1, 'Passwort vergessen');
+    // im Hintergrund senden, damit die Antwortzeit nichts verrät
+    mail.send(invite ? mail.inviteMail(u, link) : mail.resetMail(u, link, { self: true }))
+      .then(() => console.log(`[Sicherheit] „Passwort vergessen“-Mail an ${u.email} gesendet`))
+      .catch((e) => console.error(`  Mail an ${u.email} fehlgeschlagen: ${e.message}`));
+  }
+  return { ok: true, message: 'Falls es ein Konto mit dieser Adresse gibt, ist eine E-Mail mit einem Link unterwegs. Bitte auch im Spam-Ordner nachsehen.' };
+});
 
 POST('/api/auth/setup', async (req, res) => {
   if (Q.userCount.get().n > 0) fail(400, 'Setup bereits abgeschlossen');
@@ -482,13 +506,23 @@ PUT('/api/users/:id/access/:rundownId', need('admin'), (req) => {
 /** Den Super-Admin darf nur er selbst ändern (Rolle, Zugang, Passwort, E-Mail) */
 const protectOwner = (u, req) => { if (u.is_owner && u.id !== req.user.id) fail(403, 'Den Super-Admin kann nur er selbst bearbeiten'); };
 
-POST('/api/users/:id/reset-link', need('admin'), (req) => {
+/** Einladungs- bzw. Reset-Link per Mail verschicken; Fehler werden zurückgemeldet, der Link bleibt gültig */
+async function sendLinkMail(u, link, req) {
+  try {
+    await mail.send(link.purpose === 'invite' ? mail.inviteMail(u, link, req.user.name || req.user.email) : mail.resetMail(u, link));
+    console.log(`[Sicherheit] ${link.purpose === 'invite' ? 'Einladung' : 'Reset-Link'} per Mail an ${u.email} (von ${req.user.email})`);
+    return { mail_sent: true };
+  } catch (e) { return { mail_sent: false, mail_error: e.message }; }
+}
+
+POST('/api/users/:id/reset-link', need('admin'), async (req) => {
   const u = Q.userById.get(Number(req.params.id));
   if (!u) fail(404, 'Benutzer nicht gefunden');
   protectOwner(u, req);
   const purpose = String(u.password_hash).startsWith(NO_PASSWORD) ? 'invite' : 'reset';
   const link = createResetLink(u.id, purpose, req.body.hours, req.user.email);
-  return { ...link, user: userOut(Q.userById.get(u.id)) };
+  const sent = req.body.send_mail ? await sendLinkMail(u, link, req) : {};
+  return { ...link, ...sent, user: userOut(Q.userById.get(u.id)) };
 });
 
 DELETE('/api/users/:id/reset-link', need('admin'), (req) => {
@@ -516,7 +550,9 @@ POST('/api/users', need('admin'), async (req) => {
     const { lastInsertRowid } = Q.insertUserFull.run(email.trim(), (name || '').trim(), NO_PASSWORD + randomToken(16), role, 0);
     if (restricted && role !== 'admin') db.prepare('UPDATE users SET restricted=1 WHERE id=?').run(lastInsertRowid);
     const link = createResetLink(Number(lastInsertRowid), 'invite', hours ?? 168, req.user.email);
-    return { ...userOut(Q.userById.get(lastInsertRowid)), link };
+    const nu = Q.userById.get(lastInsertRowid);
+    const sent = req.body.send_mail ? await sendLinkMail(nu, link, req) : {};
+    return { ...userOut(nu), link, ...sent };
   }
   if (String(password || '').length < 8) fail(400, 'Passwort muss mindestens 8 Zeichen haben');
   const { lastInsertRowid } = Q.insertUserFull.run(email.trim(), (name || '').trim(), await hashPassword(password), role, must_change === false ? 0 : 1);
@@ -590,6 +626,16 @@ POST('/api/users/:id/make-owner', need('admin'), async (req) => {
   if (u.role !== 'admin' || u.restricted) kickUser(u.id); // neue Rechte sofort laden
   notifyAccess(u.id);
   return userOut(Q.userById.get(u.id));
+});
+
+// ---------- E-Mail-Versand (System, nur Admin)
+GET('/api/system/mail', need('admin'), () => mail.publicSettings());
+PUT('/api/system/mail', need('admin'), (req) => { try { return mail.saveSettings(req.body); } catch (e) { fail(400, e.message); } });
+POST('/api/system/mail/test', need('admin'), async (req) => {
+  const to = String(req.body.to || req.user.email).trim();
+  try { await mail.send(mail.testMail(to)); } catch (e) { fail(400, 'Testmail fehlgeschlagen: ' + e.message); }
+  console.log(`  Testmail an ${to} gesendet`);
+  return { ok: true, to };
 });
 
 // ---------- Rundowns
