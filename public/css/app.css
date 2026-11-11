@@ -1473,3 +1473,40 @@ textarea.script-in { overflow: hidden; }
   .sys-head-act { width: 100%; }
   .sys-head-act .btn { flex: 1; justify-content: center; }
 }
+
+/* ---------- System: Benachrichtigungen */
+.nt-warn a { color: inherit; text-decoration: underline; }
+.nt-list { padding: 0; overflow: hidden; }
+.nt-row { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.nt-row:last-child { border-bottom: 0; }
+.nt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.nt-txt b { font-size: 15px; }
+.nt-txt > span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+.nt-row.off .nt-txt b { color: var(--text-2); }
+.nt-sub { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--text-2); }
+.nt-sub select { width: auto; }
+
+/* ---------- System: Protokoll */
+.au-list { display: flex; flex-direction: column; }
+.au-day { font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+.au-day:first-child { margin-top: 4px; }
+.au-row { display: flex; gap: 12px; align-items: flex-start; padding: 11px 14px; background: var(--surface); border: 1px solid var(--border); border-bottom-width: 0; }
+.au-day + .au-row { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.au-row:has(+ .au-day), .au-row:last-child { border-bottom-width: 1px; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+.au-ico { flex: none; width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--accent-2); }
+.au-ico .ico { width: 15px; height: 15px; }
+.au-ico.c-auth { color: #60a5fa; }
+.au-ico.c-mail { color: var(--green-text); }
+.au-ico.c-system { color: var(--text-2); }
+.au-row.fail .au-ico { color: var(--red-text); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.au-main { flex: 1; min-width: 0; }
+.au-text { font-size: 14px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.au-text b { color: var(--text); font-weight: 600; }
+.au-note { margin-top: 4px; font-size: 12.5px; font-family: var(--font-mono); color: var(--text-2); overflow-wrap: anywhere; }
+.au-row.fail .au-note { color: var(--red-text); }
+.au-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.au-more { margin: 16px auto 0; display: flex; }
+@media (max-width: 760px) {
+  .nt-row { padding: 14px 16px; }
+  .au-row { padding: 10px 12px; }
+}
