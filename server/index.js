@@ -422,6 +422,7 @@ POST('/api/auth/password', need('viewer'), async (req, res) => {
   const u = Q.userById.get(req.user.id);
   kickUser(u.id);
   setSession(req, res, u);
+  notifyPasswordChanged(u);
   return { ok: true };
 });
 
@@ -454,6 +455,7 @@ POST('/api/reset/:token', async (req, res) => {
   if (!rec) { noteFail(ip); fail(404, 'Dieser Link ist ungültig, abgelaufen oder wurde bereits verwendet.'); }
   const { password } = req.body;
   if (String(password || '').length < 8) fail(400, 'Passwort muss mindestens 8 Zeichen haben');
+  const wasInvite = String(rec.u.password_hash).startsWith(NO_PASSWORD);
   Q.markResetUsed.run(rec.r.id);
   db.prepare('UPDATE users SET password_hash=?, must_change=0, token_version=token_version+1 WHERE id=?').run(await hashPassword(password), rec.u.id);
   Q.touchLogin.run(rec.u.id);
@@ -461,19 +463,34 @@ POST('/api/reset/:token', async (req, res) => {
   kickUser(u.id);
   setSession(req, res, u);
   console.log(`[Sicherheit] Passwort für ${u.email} über ${rec.r.purpose === 'invite' ? 'Einladungslink' : 'Reset-Link'} gesetzt`);
+  if (!wasInvite) notifyPasswordChanged(u);
   return { user: userOut(u) };
 });
 
+/** Mail "Passwort geändert" – Ansprechpartner ist der Super-Admin (bzw. ein Admin, wenn er es selbst ist) */
+function notifyPasswordChanged(u) {
+  if (String(u.password_hash).startsWith(NO_PASSWORD)) return;
+  const owner = db.prepare('SELECT name, email FROM users WHERE is_owner=1').get();
+  const contact = owner && owner.email !== u.email ? `${owner.name ? owner.name + ' ' : ''}(${owner.email})` : 'einem Admin';
+  mail.notify(mail.passwordChangedMail(u, contact), 'Hinweis „Passwort geändert“');
+}
+
 // ---------- Freigaben pro Rundown (nur Admin)
-function setShare(rid, userId, role) {
+function setShare(rid, userId, role, by) {
   const u = Q.userById.get(Number(userId));
   if (!u) fail(404, 'Benutzer nicht gefunden');
-  if (!Q.rdById.get(Number(rid))) fail(404, 'Rundown nicht gefunden');
+  const rd = Q.rdById.get(Number(rid));
+  if (!rd) fail(404, 'Rundown nicht gefunden');
+  const before = roleFor(u, rd.id);
   if (role) {
     if (!SHARE_ROLES.includes(role)) fail(400, 'Ungültige Rolle');
     Q.accessSet.run(Number(rid), u.id, role);
   } else Q.accessDel.run(Number(rid), u.id);
   notifyAccess(u.id);
+  // Mail nur, wenn der Rundown für diese Person neu sichtbar wird (nicht bei Rollenwechseln)
+  if (role && !before && roleFor(u, rd.id) && !String(u.password_hash).startsWith(NO_PASSWORD)) {
+    mail.notify(mail.shareMail(u, rd, role, by.name || by.email), 'Freigabe-Mail');
+  }
 }
 
 GET('/api/rundowns/:id/access', need('admin'), (req) => {
@@ -486,7 +503,7 @@ GET('/api/rundowns/:id/access', need('admin'), (req) => {
 });
 
 PUT('/api/rundowns/:id/access/:userId', need('admin'), (req) => {
-  setShare(getRundown(req.params.id).id, req.params.userId, req.body.role || null);
+  setShare(getRundown(req.params.id).id, req.params.userId, req.body.role || null, req.user);
   return { ok: true };
 });
 
@@ -498,7 +515,7 @@ GET('/api/users/:id/access', need('admin'), (req) => {
 });
 
 PUT('/api/users/:id/access/:rundownId', need('admin'), (req) => {
-  setShare(req.params.rundownId, req.params.id, req.body.role || null);
+  setShare(req.params.rundownId, req.params.id, req.body.role || null, req.user);
   return { ok: true };
 });
 
@@ -596,6 +613,7 @@ PATCH('/api/users/:id', need('admin'), async (req) => {
   updateRow('users', u.id, upd, ['email', 'name', 'role', 'password_hash', 'token_version', 'must_change', 'restricted']);
   if (upd.token_version) kickUser(u.id);
   else if (upd.restricted !== undefined && upd.restricted !== u.restricted) notifyAccess(u.id);
+  if (upd.password_hash && !String(u.password_hash).startsWith(NO_PASSWORD)) notifyPasswordChanged(Q.userById.get(u.id));
   return userOut(Q.userById.get(u.id));
 });
 
@@ -625,6 +643,7 @@ POST('/api/users/:id/make-owner', need('admin'), async (req) => {
   console.log(`[Sicherheit] Super-Admin übertragen von ${req.user.email} an ${u.email}`);
   if (u.role !== 'admin' || u.restricted) kickUser(u.id); // neue Rechte sofort laden
   notifyAccess(u.id);
+  mail.notify(mail.ownerMail(u, req.user.name || req.user.email), 'Super-Admin-Mail');
   return userOut(Q.userById.get(u.id));
 });
 
@@ -1475,7 +1494,10 @@ server.listen(PORT, HOST, () => {
   for (const ip of ips) console.log(`  Netzwerk:  http://${ip}:${PORT}`);
   console.log(`  Daten:     ${DATA_DIR}`);
   console.log(`  Backups:   ${backup.BACKUP_DIR} (${backup.getSettings().enabled ? `alle ${backup.getSettings().interval_hours} Std., ${backup.getSettings().keep} behalten` : 'automatisch aus'})`);
-  backup.startScheduler();
+  backup.startScheduler(console.log, (err) => {
+    // Alle Admins informieren – höchstens einmal pro Fehlerserie bzw. alle 24 Stunden
+    for (const a of db.prepare("SELECT email FROM users WHERE role='admin'").all()) mail.notify(mail.backupFailedMail(a.email, err.at, err.message), 'Backup-Warnung');
+  });
   if (Q.userCount.get().n === 0) console.log('\n  → Erster Start: Im Browser öffnen und Admin-Konto anlegen.');
   console.log('');
 });

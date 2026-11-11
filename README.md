@@ -302,6 +302,14 @@ Danach:
 - **Passwort vergessen?** auf der Anmeldeseite – Link per Mail, 1 Stunde gültig. Die Antwort ist immer gleich (verrät nicht, ob es ein Konto gibt); max. 5 Anfragen je 15 Min. pro Gerät, 1 Mail je 2 Min. pro Konto.
 - **Einladung per E-Mail** beim Anlegen eines Benutzers (der Link wird zusätzlich angezeigt).
 - **Reset-Link per E-Mail** im Schlüssel-Dialog („Per E-Mail senden“).
+- **Freigabe:** wird jemandem ein Rundown freigegeben, den er vorher nicht sehen konnte, bekommt er eine Mail mit Datum, Start, Rolle und Link (nicht bei bloßen Rollenwechseln oder offenen Einladungen).
+- **Passwort geändert:** Sicherheitshinweis nach jeder Passwortänderung (selbst, per Reset-Link oder durch einen Admin) – mit dem Super-Admin als Ansprechpartner.
+- **Backup fehlgeschlagen:** schlägt die automatische Sicherung fehl, bekommen alle Admins eine Warnung (einmal pro Fehlerserie, höchstens alle 24 Stunden).
+- **Super-Admin:** wer die Rolle übertragen bekommt, wird per Mail informiert.
+
+Die Benachrichtigungen laufen im Hintergrund; schlägt der Versand fehl, steht das nur im Server-Log – die eigentliche Aktion klappt trotzdem.
+
+Die Vorlagen liegen in `server/mail-templates/` (je eine `.html`- und `.txt`-Datei, erste Zeile der Textdatei = Betreff). Platzhalter wie `{{name}}` werden beim Versand ersetzt, `{{app_url}}` ist die eingetragene Adresse der App (auch für das Logo).
 
 Ohne Einrichtung funktioniert alles wie bisher über Links zum Weiterschicken. Damit Mails nicht im Spam landen, sollten SPF und DKIM für die Absender-Domain eingerichtet sein.
 

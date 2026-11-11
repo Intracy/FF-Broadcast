@@ -1,0 +1,15 @@
+Betreff: Du bist jetzt Super-Admin von FrankenFinals Rundown
+
+Du bist jetzt Super-Admin von FrankenFinals Rundown
+
+Hallo {{name}},
+
+{{uebertragen_von}} hat dir am {{zeitpunkt}} die Rolle Super-Admin übertragen.
+
+Du hast damit immer vollen Zugriff und kannst die Rolle nur selbst weitergeben.
+
+FrankenFinals Rundown öffnen:
+{{link}}
+
+--
+Automatisch gesendet von FrankenFinals Rundown · bitte nicht antworten

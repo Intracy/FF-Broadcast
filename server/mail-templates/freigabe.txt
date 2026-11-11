@@ -1,0 +1,17 @@
+Betreff: Neuer Rundown für dich: {{rundown_titel}}
+
+Neuer Rundown für dich: {{rundown_titel}}
+
+Hallo {{name}},
+
+{{freigegeben_von}} hat dir den Rundown „{{rundown_titel}}“ ({{rundown_datum}}, Start {{rundown_start}}) freigegeben.
+
+Datum:        {{rundown_datum}}
+Start:        {{rundown_start}}
+Deine Rolle:  {{rolle}}
+
+Rundown öffnen:
+{{link}}
+
+--
+Automatisch gesendet von FrankenFinals Rundown · bitte nicht antworten

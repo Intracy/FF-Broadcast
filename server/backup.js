@@ -216,15 +216,25 @@ export function status() {
 /* ---------- Zeitplan */
 const bootAt = Date.now();
 let timer = null;
-export function startScheduler(log = console.log) {
+/** onError(err) wird bei einer Fehlerserie einmal aufgerufen, danach höchstens alle 24 h erneut */
+export function startScheduler(log = console.log, onError = null) {
+  let alertedAt = 0;
   const tick = () => {
     try {
       const s = getSettings();
       if (!s.enabled) return;
       const lastAuto = list().find((b) => b.kind === 'auto');
       const due = !lastAuto || Date.now() - lastAuto.created_at >= s.interval_hours * 3600e3;
-      if (due) { const b = create('auto'); log(`  Backup erstellt: ${b.name}`); }
-    } catch (e) { lastError = { at: Date.now(), message: e.message }; console.error('  Backup-Fehler:', e.message); }
+      if (due) { const b = create('auto'); log(`  Backup erstellt: ${b.name}`); alertedAt = 0; }
+    } catch (e) {
+      const msg = e.message.replace(/^Backup fehlgeschlagen: /, '');
+      lastError = { at: Date.now(), message: msg };
+      console.error('  Backup-Fehler:', msg);
+      if (onError && Date.now() - alertedAt >= 24 * 3600e3) {
+        alertedAt = Date.now();
+        try { onError(lastError); } catch (err) { console.error('  Backup-Warnung nicht versendet:', err.message); }
+      }
+    }
   };
   setTimeout(tick, 15000).unref();          // kurz nach dem Start (fehlt ein aktuelles Backup?)
   timer = setInterval(tick, 60000);          // danach minütlich prüfen
