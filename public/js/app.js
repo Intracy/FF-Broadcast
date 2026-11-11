@@ -125,7 +125,7 @@ async function router() {
   let m;
   if ((m = hash.match(/^#\/rundown\/(\d+)/))) return viewRundown(Number(m[1]));
   if (hash === '#/users' && can('admin')) return viewUsers();
-  if (hash === '#/system' && can('admin')) return viewSystem();
+  if ((m = hash.match(/^#\/system(?:\/(\w+))?$/)) && can('admin')) return viewSystem(m[1] || '');
   if (hash !== '#/rundowns') history.replaceState(null, '', '#/rundowns');
   return viewRundowns();
 }
@@ -143,7 +143,7 @@ function userMenu(anchor) {
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi', onclick: () => { closePop(); changePassword(); } }, icon('key'), 'Passwort ändern'),
     can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/users'); } }, icon('users'), 'Benutzer verwalten') : null,
-    can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/system'); } }, icon('database'), 'System & Backups') : null,
+    can('admin') ? h('button', { class: 'mi', onclick: () => { closePop(); go('#/system'); } }, icon('database'), 'System') : null,
     h('button', { class: 'mi', onclick: () => { closePop(); document.querySelector('.topbar .theme-toggle')?.click(); } }, icon(theme() === 'dark' ? 'sun' : 'moon'), theme() === 'dark' ? 'Helles Design' : 'Dunkles Design'),
     h('div', { class: 'pop-sep' }),
     h('button', { class: 'mi danger-mi', onclick: () => { closePop(); logout(); } }, icon('logout'), 'Abmelden'),
@@ -993,19 +993,46 @@ function relFuture(ms) {
 }
 const KIND_ICON = { auto: 'history', manuell: 'user', 'vor-wiederherstellung': 'shield', 'vor-loeschen': 'trash', upload: 'upload' };
 
-async function viewSystem() {
+const SYS_SECTIONS = [
+  { id: 'backups', label: 'Backups', icon: 'database', intro: 'Sicherungen der kompletten Datenbank: Rundowns, Benutzer, Links und Tokens.' },
+  { id: 'mail', label: 'E-Mail-Versand', icon: 'send', intro: 'Einladungen, Passwort-Links und Benachrichtigungen per E-Mail.' },
+  { id: 'verlauf', label: 'Änderungsverlauf', icon: 'history', intro: 'Wer hat wann was geändert – und wie lange das aufbewahrt wird.' },
+];
+const sysPhone = () => matchMedia('(max-width: 760px)').matches;
+
+async function viewSystem(section = '') {
   let data;
-  const head = h('div', { class: 'page-head' },
-    h('div', null, h('div', { class: 'label' }, 'Verwaltung'), h('h1', null, 'System & Backups'), h('div', { class: 'muted', style: { marginTop: '4px' } }, 'Sicherungen der kompletten Datenbank: Rundowns, Benutzer, Links und Tokens.')),
-    h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+  // Am Handy ohne Bereich: nur die Liste; am Rechner: erster Bereich
+  if (section && !SYS_SECTIONS.some((x) => x.id === section)) { history.replaceState(null, '', '#/system'); section = ''; }
+  const listOnly = !section && sysPhone();
+  const sec = SYS_SECTIONS.find((x) => x.id === section) || SYS_SECTIONS[0];
+  const nav = { backups: { dot: '', sub: '…' }, mail: { dot: '', sub: '…' }, verlauf: { dot: '', sub: '…' } };
+  const navBox = h('nav', { class: 'sys-nav' + (listOnly ? ' sys-nav-list' : '') });
+  const drawNav = () => fill(navBox, SYS_SECTIONS.map((x) => h('a', {
+    class: 'sys-nav-item' + (!listOnly && x.id === sec.id ? ' active' : ''), href: '#/system/' + x.id,
+  },
+  h('span', { class: 'sys-nav-ico' }, icon(x.icon)),
+  h('span', { class: 'sys-nav-txt' }, h('b', null, x.label), h('small', null, nav[x.id].sub)),
+  nav[x.id].dot ? h('span', { class: 'sys-dot ' + nav[x.id].dot, title: nav[x.id].sub }) : null,
+  h('span', { class: 'sys-nav-chev' }, icon('chevronRight')))));
+  const setNav = (id, dot, sub) => { nav[id] = { dot, sub }; drawNav(); };
+  drawNav();
+
+  const mailBadge = h('span');
+  const head = h('div', { class: 'page-head sys-head' },
+    h('div', null,
+      sysPhone() ? h('a', { class: 'sys-back', href: '#/system' }, icon('arrowLeft'), 'System') : h('div', { class: 'label' }, 'System'),
+      h('h1', null, sec.label, sec.id === 'mail' ? mailBadge : null),
+      h('div', { class: 'muted', style: { marginTop: '4px' } }, sec.intro)),
+    sec.id === 'backups' ? h('div', { class: 'sys-head-act' },
       h('button', { class: 'btn', onclick: () => fileIn.click() }, icon('upload'), 'Backup hochladen'),
-      h('button', { class: 'btn primary', onclick: () => backupNow() }, icon('database'), 'Jetzt sichern')));
+      h('button', { class: 'btn primary', onclick: () => backupNow() }, icon('database'), 'Jetzt sichern')) : null);
+  const bkSum = h('span', { class: 'muted bk-sum' });
   const fileIn = h('input', { type: 'file', accept: '.db,application/vnd.sqlite3,application/octet-stream', style: { display: 'none' }, onchange: (e) => upload(e.target.files[0]) });
   const statusBox = h('div', { class: 'bk-status' });
   const listBox = h('div', { class: 'bk-list' });
-  const histBox = h('div', { style: { marginTop: '26px' } });
-  const drawHist = (hs) => fill(histBox,
-    h('div', { class: 'bk-list-head' }, h('h2', null, 'Änderungsverlauf')),
+  const histBox = h('div');
+  const drawHist = (hs) => (setNav('verlauf', '', `${hs.retention_days === 0 ? 'Unbegrenzt' : hs.retention_days === 365 ? '1 Jahr' : hs.retention_days + ' Tage'} · ${hs.entries} Einträge`), fill(histBox,
     h('div', { class: 'card bk-card' },
       h('div', { class: 'bk-card-top' },
         h('div', { class: 'bk-ico on' }, icon('history')),
@@ -1019,12 +1046,13 @@ async function viewSystem() {
             if (v && hs.retention_days !== 0 && v < hs.retention_days && !(await confirmDialog(`Einträge, die älter als ${v} Tage sind, werden sofort gelöscht und können nicht mehr rückgängig gemacht werden.`, { title: 'Aufbewahrung verkürzen?', okLabel: 'Verkürzen' }))) { e.target.value = hs.retention_days; return; }
             try { drawHist(await api('PATCH', '/api/history/settings', { retention_days: v })); toast('Einstellungen gespeichert', 'ok'); } catch (err) { toast(err.message, 'err'); }
           } }, hs.retentions.map((v) => h('option', { value: v, selected: v === hs.retention_days }, v === 0 ? 'unbegrenzt' : v === 365 ? '1 Jahr' : `${v} Tage`)))),
-        h('div', { class: 'bk-wide' }, h('span', null, 'Hinweis'), h('small', null, 'Ältere Einträge werden automatisch gelöscht. Live-Aktionen (Start, Weiter, ±Zeit) werden nicht aufgezeichnet. Der Verlauf ist Teil der Backups.')))));
+        h('div', { class: 'bk-wide' }, h('span', null, 'Hinweis'), h('small', null, 'Ältere Einträge werden automatisch gelöscht. Live-Aktionen (Start, Weiter, ±Zeit) werden nicht aufgezeichnet. Der Verlauf ist Teil der Backups.'))))));
   api('GET', '/api/history/settings').then(drawHist).catch(() => {});
 
   // E-Mail-Versand (SMTP) für Einladungen und „Passwort vergessen“
-  const mailBox = h('div', { style: { marginTop: '26px' } });
+  const mailBox = h('div');
   const drawMail = (ms) => {
+    setNav('mail', ms.enabled ? 'ok' : '', ms.enabled ? 'Aktiv' : 'Nicht eingerichtet');
     const f = (name, label, attrs = {}, hint = '') => {
       const el = h('input', { class: 'input', name, value: ms[name] ?? '', disabled: ms.env, ...attrs });
       return [el, h('label', { class: 'field' }, h('span', null, label), el, hint ? h('small', { class: 'hint' }, hint) : null)];
@@ -1050,8 +1078,8 @@ async function viewSystem() {
       S.mail = r.enabled;
       return r;
     };
+    fill(mailBadge, status);
     fill(mailBox,
-      h('div', { class: 'bk-list-head' }, h('h2', null, 'E-Mail-Versand'), status),
       h('div', { class: 'card bk-card' },
         h('div', { class: 'bk-card-top' },
           h('div', { class: 'bk-ico' + (ms.enabled ? ' on' : '') }, icon('send')),
@@ -1078,17 +1106,26 @@ async function viewSystem() {
           } }, icon('send'), 'Speichern & Testmail senden'))));
   };
   api('GET', '/api/system/mail').then(drawMail).catch(() => {});
-  shell('system', h('div', { class: 'page page-narrow' }, head, fileIn, statusBox,
-    h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), h('span', { class: 'muted bk-sum' })), listBox,
-    mailBox,
-    histBox,
-    h('div', { class: 'sec-info', style: { marginTop: '22px' } },
+  const content = {
+    backups: () => [statusBox,
+      h('div', { class: 'bk-list-head' }, h('h2', null, 'Vorhandene Backups'), bkSum), listBox,
+      backupInfo],
+    mail: () => [mailBox],
+    verlauf: () => [histBox],
+  };
+  const backupInfo = h('div', { class: 'sec-info', style: { marginTop: '22px' } },
       h('div', null, icon('shield'), h('span', null, h('b', null, 'Backups enthalten alle Daten'), ' inkl. E-Mail-Adressen, Passwort-Hashes, API-Tokens und öffentlicher Links. Heruntergeladene Dateien bitte sicher aufbewahren.')),
-      h('div', null, icon('hardDrive'), h('span', null, h('b', null, 'Tipp: '), 'Backups zusätzlich auf einem anderen Datenträger ablegen (USB-Stick, NAS), z. B. mit der Umgebungsvariable ', h('code', null, 'BACKUP_DIR'), ' – fällt die SD-Karte oder Festplatte aus, sind sie sonst mit weg.')))));
+      h('div', null, icon('hardDrive'), h('span', null, h('b', null, 'Tipp: '), 'Backups zusätzlich auf einem anderen Datenträger ablegen (USB-Stick, NAS), z. B. mit der Umgebungsvariable ', h('code', null, 'BACKUP_DIR'), ' – fällt die SD-Karte oder Festplatte aus, sind sie sonst mit weg.')));
+  shell('system', h('div', { class: 'page page-narrow' }, fileIn,
+    listOnly
+      ? [h('div', { class: 'page-head' }, h('div', null, h('div', { class: 'label' }, 'Verwaltung'), h('h1', null, 'System'))), navBox]
+      : h('div', { class: 'sys-layout' }, sysPhone() ? null : navBox, h('div', { class: 'sys-main' }, head, content[sec.id]()))));
 
   const load = async () => { data = await api('GET', '/api/backups'); draw(); };
   const draw = () => {
     const st = data.status, s = st.settings, lock = st.env_locked;
+    setNav('backups', st.last_error ? 'err' : s.enabled ? 'ok' : 'warn',
+      st.last_error ? 'Letztes Backup fehlgeschlagen' : st.last ? 'Zuletzt ' + relTime(new Date(st.last.created_at).toISOString().replace('T', ' ').slice(0, 19)) + (s.enabled ? '' : ' · automatisch aus') : s.enabled ? 'Noch kein Backup' : 'Automatisch aus');
     const sel = (key, opts, fmt) => h('select', { class: 'input sort-sel', disabled: lock[key], title: lock[key] ? 'Per Umgebungsvariable festgelegt' : '', onchange: (e) => save({ [key]: Number(e.target.value) }) },
       opts.map((v) => h('option', { value: v, selected: v === s[key] }, fmt(v))));
     fill(statusBox,
@@ -1107,7 +1144,7 @@ async function viewSystem() {
           h('div', { class: 'bk-wide' }, h('span', null, 'Speicherort'), h('code', { title: st.dir }, st.dir), h('small', null, `${st.count} Backups · ${fmtBytes(st.total_bytes)}` + (st.free_bytes != null ? ` · ${fmtBytes(st.free_bytes)} frei` : '') + (st.dir_is_default ? '' : ' · eigener Speicherort (BACKUP_DIR)')))),
         st.last_error ? h('div', { class: 'danger-box', style: { marginTop: '12px', marginBottom: 0 } }, icon('alert'), h('div', null, h('b', null, 'Letztes Backup fehlgeschlagen'), `${fmtDateTime(st.last_error.at)}: ${st.last_error.message}`)) : null));
 
-    $('.bk-sum').textContent = data.backups.length ? `${data.backups.length} Dateien` : '';
+    bkSum.textContent = data.backups.length ? `${data.backups.length} Dateien` : '';
     if (!data.backups.length) { fill(listBox, h('div', { class: 'ov-empty' }, icon('database'), h('b', null, 'Noch keine Backups'), h('span', null, 'Das erste automatische Backup entsteht kurz nach dem Start – oder jetzt mit „Jetzt sichern“.'))); return; }
     fill(listBox, data.backups.map((b, i) => h('div', { class: 'bk-row' + (b.valid ? '' : ' invalid') },
       h('div', { class: `bk-kind k-${b.kind}` }, icon(KIND_ICON[b.kind] || 'database')),
