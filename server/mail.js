@@ -6,6 +6,9 @@ import net from 'node:net';
 import tls from 'node:tls';
 import crypto from 'node:crypto';
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { db, getSecret } from './db.js';
 
 db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
@@ -189,65 +192,90 @@ export async function send(msg) {
 }
 
 /* ------------------------------------------------------------------ Vorlagen */
+// Die Vorlagen liegen als HTML + Text in server/mail-templates/<name>.{html,txt}.
+// Platzhalter: {{name}} (im HTML automatisch maskiert), Abschnitte: {{#flag}}…{{/flag}}.
+// Die erste Zeile der Text-Vorlage ist der Betreff ("Betreff: …").
+const TPL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'mail-templates');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-const LOGO = '<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:40px;height:40px;border-radius:11px;background:#7c3aed;background-image:linear-gradient(135deg,#9b6cff,#6d28d9);text-align:center;vertical-align:middle;color:#fff;font:700 18px Arial,sans-serif">FF</td><td style="padding-left:12px;font:700 15px Arial,sans-serif;letter-spacing:.06em;color:#111114">FF RUNDOWN</td></tr></table>';
-
-function layout({ title, intro, button, url, outro }) {
-  const html = `<!doctype html><html lang="de"><body style="margin:0;background:#f3f3f6;padding:28px 12px;font-family:Arial,Helvetica,sans-serif;color:#121216">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #e4e4ea">
-<tr><td style="padding:26px 28px 6px">${LOGO}</td></tr>
-<tr><td style="padding:16px 28px 0"><h1 style="margin:0 0 10px;font-size:21px;line-height:1.3">${esc(title)}</h1>
-<p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#3f3f46">${intro}</p>
-${button ? `<p style="margin:0 0 22px"><a href="${esc(url)}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:12px 22px;border-radius:10px">${esc(button)}</a></p>
-<p style="margin:0 0 18px;font-size:12.5px;line-height:1.5;color:#71717a">Falls der Knopf nicht funktioniert, diesen Link in den Browser kopieren:<br><a href="${esc(url)}" style="color:#6d28d9;word-break:break-all">${esc(url)}</a></p>` : ''}
-${outro ? `<p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#71717a">${outro}</p>` : ''}</td></tr>
-</table>
-<p style="font-size:11.5px;color:#a1a1aa;margin:14px 0 0">Automatisch gesendet von FF Rundown · bitte nicht antworten</p>
-</td></tr></table></body></html>`;
-  const strip = (s) => String(s).replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-  const text = [title, '', strip(intro), button ? `\n${button}: ${url}` : '', outro ? `\n${strip(outro)}` : '', '\n—\nAutomatisch gesendet von FF Rundown'].join('\n');
-  return { html, text };
+const cache = new Map();
+function load(name) {
+  if (!cache.has(name)) {
+    const html = fs.readFileSync(path.join(TPL_DIR, name + '.html'), 'utf8');
+    const raw = fs.readFileSync(path.join(TPL_DIR, name + '.txt'), 'utf8').replace(/\r\n/g, '\n');
+    const m = raw.match(/^Betreff:\s*(.*)\n\n?/);
+    cache.set(name, { html, subject: m ? m[1].trim() : 'FrankenFinals Rundown', text: m ? raw.slice(m[0].length) : raw });
+  }
+  return cache.get(name);
 }
+function fill(tpl, vars, escape) {
+  return tpl
+    .replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}/g, (_, k, inner) => (vars[k] ? inner : ''))
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => (escape ? esc(vars[k]) : String(vars[k] ?? '')));
+}
+/** Vorlage füllen → { to, subject, html, text } */
+export function render(name, to, vars = {}) {
+  const t = load(name);
+  const v = { app_url: appUrl(), ...vars };
+  return { to, subject: fill(t.subject, v, false), html: fill(t.html, v, true), text: fill(t.text, v, false) };
+}
+
 const validity = (h) => (h >= 48 ? `${Math.round(h / 24)} Tage` : h === 1 ? '1 Stunde' : `${h} Stunden`);
+const TZ = process.env.TZ_MAIL || 'Europe/Berlin';
+/** "11.11.2026, 14:05 Uhr" (deutsche Zeit) */
+export function when(d = new Date()) {
+  const f = new Intl.DateTimeFormat('de-DE', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return f.format(new Date(d)).replace(' um ', ', ') + ' Uhr';
+}
+/** "2026-06-14" → "Samstag, 14.06.2026" */
+function dayLabel(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return 'ohne Datum';
+  const d = new Date(iso + 'T12:00:00Z');
+  return new Intl.DateTimeFormat('de-DE', { timeZone: 'UTC', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+}
+const hello = (u) => u.name || u.email.split('@')[0];
+const resetUrl = (link) => `${appUrl()}/#/reset/${link.token}`;
 
 export function inviteMail(u, link, by) {
-  const url = `${appUrl()}/#/reset/${link.token}`;
-  const hi = u.name ? `Hallo ${esc(u.name)},` : 'Hallo,';
-  return {
-    to: u.email,
-    subject: 'Einladung zu FF Rundown',
-    ...layout({
-      title: 'Du wurdest zu FF Rundown eingeladen',
-      intro: `${hi}<br><br>${by ? esc(by) + ' hat' : 'Es wurde'} für dich ein Zugang zu <b>FF Rundown</b> angelegt – dem Ablaufplan für unsere Produktionen. Lege jetzt dein eigenes Passwort fest, danach kannst du dich mit <b>${esc(u.email)}</b> anmelden.`,
-      button: 'Passwort festlegen', url,
-      outro: `Der Link ist ${validity(link.hours)} gültig und funktioniert genau einmal. Auf dem Handy kannst du FF Rundown anschließend über „Zum Home-Bildschirm“ wie eine App nutzen.`,
-    }),
-  };
+  return render('einladung', u.email, {
+    name: hello(u), eingeladen_von: by || 'Ein Admin', email: u.email, link: resetUrl(link), gueltigkeit: validity(link.hours),
+  });
 }
 
 export function resetMail(u, link, { self = false } = {}) {
-  const url = `${appUrl()}/#/reset/${link.token}`;
-  const hi = u.name ? `Hallo ${esc(u.name)},` : 'Hallo,';
-  return {
-    to: u.email,
-    subject: 'Passwort zurücksetzen – FF Rundown',
-    ...layout({
-      title: 'Neues Passwort festlegen',
-      intro: `${hi}<br><br>${self ? 'für dein Konto wurde „Passwort vergessen“ angefordert.' : 'ein Admin hat dir einen Link zum Zurücksetzen deines Passworts geschickt.'} Über den Knopf legst du ein neues Passwort fest.`,
-      button: 'Neues Passwort festlegen', url,
-      outro: `Der Link ist ${validity(link.hours)} gültig und funktioniert genau einmal.${self ? ' Wenn du das nicht warst, kannst du diese Mail ignorieren – dein bisheriges Passwort bleibt gültig.' : ''}`,
-    }),
-  };
+  return render('passwort-reset', u.email, {
+    name: hello(u), link: resetUrl(link), gueltigkeit: validity(link.hours), selbst_angefordert: self,
+    grund: self ? 'für dein Konto wurde „Passwort vergessen“ angefordert.' : 'ein Admin hat dir einen Link zum Zurücksetzen deines Passworts geschickt.',
+  });
 }
 
 export function testMail(to) {
-  return {
-    to,
-    subject: 'Testmail von FF Rundown',
-    ...layout({
-      title: 'Der Mailversand funktioniert',
-      intro: `Diese Testmail wurde von FF Rundown verschickt. Einladungen und „Passwort vergessen“ kommen ab jetzt auf diesem Weg.<br><br>Links in den Mails zeigen auf: <b>${esc(appUrl() || '(Adresse der App nicht eingetragen)')}</b>`,
-    }),
-  };
+  return render('testmail', to, { app_url: appUrl() || '(Adresse der App nicht eingetragen)' });
+}
+
+const ROLE_DE = { viewer: 'Viewer – nur ansehen', operator: 'Operator – Live-Steuerung', editor: 'Editor – bearbeiten' };
+export function shareMail(u, rd, role, by) {
+  return render('freigabe', u.email, {
+    name: hello(u), freigegeben_von: by || 'Ein Admin', rundown_titel: rd.title, rundown_datum: dayLabel(rd.event_date),
+    rundown_start: `${rd.start_time || '–'} Uhr`, rolle: ROLE_DE[role] || role, link: `${appUrl()}/#/rundown/${rd.id}`,
+  });
+}
+
+export function passwordChangedMail(u, contact) {
+  return render('passwort-geaendert', u.email, { name: hello(u), email: u.email, zeitpunkt: when(), kontakt: contact || 'einem Admin' });
+}
+
+export function backupFailedMail(to, at, error) {
+  return render('backup-fehler', to, { zeitpunkt: when(at), fehler: error, link: `${appUrl()}/#/system` });
+}
+
+export function ownerMail(u, by) {
+  return render('super-admin', u.email, { name: hello(u), uebertragen_von: by || 'Der bisherige Super-Admin', zeitpunkt: when(), link: appUrl() || '' });
+}
+
+/** Benachrichtigung im Hintergrund senden – blockiert nie, wirft nie */
+export function notify(msg, label = 'Mail') {
+  if (!enabled()) return;
+  Promise.resolve().then(() => send(msg))
+    .then(() => console.log(`  ${label} an ${msg.to} gesendet`))
+    .catch((e) => console.error(`  ${label} an ${msg.to} fehlgeschlagen:`, e.message));
 }

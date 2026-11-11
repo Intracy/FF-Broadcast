@@ -1,0 +1,16 @@
+Betreff: Einladung zu FrankenFinals Rundown
+
+Du wurdest zu FrankenFinals Rundown eingeladen
+
+Hallo {{name}},
+
+{{eingeladen_von}} hat für dich einen Zugang zu FrankenFinals Rundown angelegt – dem Ablaufplan für unsere Produktionen. Lege jetzt dein eigenes Passwort fest, danach meldest du dich mit {{email}} an.
+
+Passwort festlegen:
+{{link}}
+
+Der Link ist {{gueltigkeit}} gültig und funktioniert genau einmal.
+Tipp: Auf dem Handy kannst du FrankenFinals Rundown über „Zum Home-Bildschirm“ wie eine App nutzen.
+
+--
+Automatisch gesendet von FrankenFinals Rundown · bitte nicht antworten

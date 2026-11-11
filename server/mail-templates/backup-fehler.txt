@@ -1,0 +1,15 @@
+Betreff: Achtung: Backup fehlgeschlagen
+
+ACHTUNG: BACKUP FEHLGESCHLAGEN
+
+Die automatische Sicherung am {{zeitpunkt}} ist fehlgeschlagen:
+
+  {{fehler}}
+
+Bitte unter „System“ prüfen.
+
+System öffnen:
+{{link}}
+
+--
+Automatisch gesendet von FrankenFinals Rundown · bitte nicht antworten
